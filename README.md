@@ -68,7 +68,7 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## Contact
 
-Your Name - daveymason.com
+daveymason.com
 Project Link: [https://github.com/daveymason/fhir-patient-dashboard](https://github.com/daveymason/fhir-patient-dashboard)
 
 Feel free to contact for more information or any issues related to the project.

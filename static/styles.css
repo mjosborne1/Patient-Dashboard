@@ -14,3 +14,7 @@ body {
 button {
     cursor: pointer;
 }
+
+.h2 {
+    color: #007bff !important;
+}

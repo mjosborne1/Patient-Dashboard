@@ -19,19 +19,45 @@ def get_patients():
     if response.status_code == 200:
         patients = response.json().get('entry', [])
         processed_patients = []
-        for patient in patients:
-            resource = patient['resource']
-            # Process and clean patient data
+
+        for patient_entry in patients:
+            resource = patient_entry['resource']
+
+            # Extract name
+            name = resource.get('name', [{'given': ['Unknown'], 'family': ''}])[0]
+            full_name = ' '.join(name.get('given', ['Unknown']) + [name.get('family', '')])
+
+            # Extract gender
+            gender = resource.get('gender', 'Unknown')
+
+            # Extract birth date
+            birth_date = resource.get('birthDate', 'Unknown')
+
+            # Extract address
+            address_info = resource.get('address', [{'line': ['Unknown Address']}])[0]
+            address_parts = address_info.get('line', [])
+            address_parts.extend([
+                address_info.get('city', ''),
+                address_info.get('state', ''),
+                address_info.get('postalCode', '')
+            ])
+            address = ', '.join(filter(None, address_parts))  # Filter out empty strings
+
+            # Extract telecom
+            telecom_info = resource.get('telecom', [{'value': 'Unknown Contact'}])[0]
+            telecom = telecom_info.get('value', 'Unknown Contact')
+
             processed_patient = {
                 "id": resource.get('id', 'Unknown'),
-                "name": ' '.join(resource.get('name', [{'given': ['Unknown'], 'family': ''}])[0]['given'] + [resource.get('name', [{'given': ['Unknown'], 'family': ''}])[0]['family']]),
-                "gender": resource.get('gender', 'Unknown'),
-                "birthDate": resource.get('birthDate', 'Unknown'),
-                "address": resource.get('address', [{'text': 'Unknown Address'}])[0].get('text', 'Unknown Address'),
-                "telecom": resource.get('telecom', [{'value': 'Unknown Contact'}])[0].get('value', 'Unknown Contact'),
-                "managingOrganization": resource.get('managingOrganization', {'display': 'Unknown Organization'}).get('display', 'Unknown Organization')
+                "name": full_name,
+                "gender": gender,
+                "birthDate": birth_date,
+                "address": address,
+                "telecom": telecom,
             }
+
             processed_patients.append(processed_patient)
+
         return render_template('patients.html', patients=processed_patients)
     else:
         return jsonify({"error": "Failed to fetch patients"}), 500

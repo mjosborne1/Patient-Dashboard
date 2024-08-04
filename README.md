@@ -72,3 +72,7 @@ Your Name - daveymason.com
 Project Link: [https://github.com/daveymason/fhir-patient-dashboard](https://github.com/daveymason/fhir-patient-dashboard)
 
 Feel free to contact for more information or any issues related to the project.
+
+## Acknowledgements
+Logo is an icon by Freepik [from Flaticon](https://www.freepik.com/icon/computer_8811410#fromView=search&page=1&position=5&uuid=7f2f0cf5-731f-4ab9-9ab6-1ec888c8328b).
+```

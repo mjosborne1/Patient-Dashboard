@@ -1,0 +1,16 @@
+body {
+    font-family: Arial, sans-serif;
+}
+
+.patient-card {
+    background-color: #f9f9f9;
+}
+
+.patient-details {
+    border: 1px solid #ddd;
+    padding: 10px;
+}
+
+button {
+    cursor: pointer;
+}

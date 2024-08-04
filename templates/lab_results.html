@@ -1,0 +1,21 @@
+<!-- lab_results.html -->
+<table class="table">
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Test Code</th>
+            <th>Value</th>
+            <th>Unit</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for result in lab_results %}
+        <tr>
+            <td>{{ result.resource.formattedDate }}</td>
+            <td>{{ result.resource.code.coding[0].code }}</td>
+            <td>{{ result.resource.valueQuantity.value }}</td>
+            <td>{{ result.resource.valueQuantity.unit }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

@@ -1,0 +1,29 @@
+<!-- patient_details.html -->
+<div class="card mt-3">
+    <div class="card-header">
+        Patient Details - ID: {{ patient['id'] }}
+    </div>
+    <div class="card-body">
+        <h5 class="card-title">{{ patient['name'][0]['given'][0] }} {{ patient['name'][0]['family'] }}</h5>
+        <p class="card-text">
+            <strong>Gender:</strong> {{ patient['gender'] }}
+            <br>
+            <strong>Birth Date:</strong> {{ patient['birthDate'] }}
+            <br>
+            <strong>Identifier:</strong> {{ patient['simple_identifier'] }}
+            <br>
+            <strong>Address:</strong> {{ patient['simple_address'] }}
+            <br>
+            <strong>Contact:</strong> {{ patient['work_phone'] }}
+            <br>
+            <strong>Managing Organization:</strong> {{ patient.get('managingOrganization', {}).get('display', 'N/A') }}
+        </p>
+    </div>
+
+</div>
+
+<button class="btn btn-primary mt-3" hx-get="/fhir/Patients" hx-target="#content">Back to Patients</button>
+<button hx-get="/fhir/LabResults/{{ patient['id'] }}" hx-target="#labResults" hx-trigger="click" class="btn btn-info">Lab Results</button>
+<div id="labResults"></div>
+
+

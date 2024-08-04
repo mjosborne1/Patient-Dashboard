@@ -1,0 +1,29 @@
+<h2>Patients</h2>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Gender</th>
+            <th>Birth Date</th>
+            <th>Address</th>
+            <th>Contact</th>
+            <th>Managing Organization</th>
+            <th>Details</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for patient in patients %}
+        <tr>
+            <td>{{ patient.id }}</td>
+            <td>{{ patient.name }}</td>
+            <td>{{ patient.gender }}</td>
+            <td>{{ patient.birthDate }}</td>
+            <td>{{ patient.address }}</td>
+            <td>{{ patient.telecom }}</td>
+            <td>{{ patient.managingOrganization }}</td>
+            <td><button class="btn btn-primary" hx-get="/fhir/Patient/{{ patient.id }}" hx-target="#content">View Details</button></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

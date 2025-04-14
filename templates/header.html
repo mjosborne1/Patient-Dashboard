@@ -1,6 +1,15 @@
 <header class="bg-dark text-white p-3 mb-4">
-    <div class="container d-flex align-items-center">
-        <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="me-3" style="height: 40px;">
-        <h1 class="h3 mb-0">FHIR Dash</h1>
+    <div class="container d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="me-3" style="height: 40px;">
+        </div>
+        <div>
+            <button class="btn btn-outline-light" hx-get="/fhir/Patients" hx-target="#content">
+                <i class="fas fa-users"></i> Patients
+            </button>
+            <button class="btn btn-outline-light" hx-get="/fhir/Demographics" hx-target="#content">
+                <i class="fas fa-chart-pie"></i> Demographics
+            </button>
+        </div>
     </div>
 </header>

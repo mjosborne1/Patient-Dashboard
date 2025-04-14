@@ -1,0 +1,145 @@
+<h2 class="text-primary"><i class="fas fa-chart-pie"></i> Patient Demographics</h2>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+                <i class="fas fa-venus-mars"></i> Gender Distribution
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Gender</th>
+                            <th>Count</th>
+                            <th>Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Male</td>
+                            <td>{{ demographics.gender_counts.male }}</td>
+                            <td>{{ "%.1f"|format(demographics.gender_counts.male / demographics.total_patients * 100) }}%</td>
+                        </tr>
+                        <tr>
+                            <td>Female</td>
+                            <td>{{ demographics.gender_counts.female }}</td>
+                            <td>{{ "%.1f"|format(demographics.gender_counts.female / demographics.total_patients * 100) }}%</td>
+                        </tr>
+                        <tr>
+                            <td>Other</td>
+                            <td>{{ demographics.gender_counts.other }}</td>
+                            <td>{{ "%.1f"|format(demographics.gender_counts.other / demographics.total_patients * 100) }}%</td>
+                        </tr>
+                        <tr>
+                            <td>Unknown</td>
+                            <td>{{ demographics.gender_counts.unknown }}</td>
+                            <td>{{ "%.1f"|format(demographics.gender_counts.unknown / demographics.total_patients * 100) }}%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+                <i class="fas fa-users"></i> Age Distribution
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Age Group</th>
+                            <th>Count</th>
+                            <th>Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>0-18</td>
+                            <td>{{ demographics.age_groups['0-18'] }}</td>
+                            <td>{{ "%.1f"|format(demographics.age_groups['0-18'] / demographics.total_patients * 100) }}%</td>
+                        </tr>
+                        <tr>
+                            <td>19-35</td>
+                            <td>{{ demographics.age_groups['19-35'] }}</td>
+                            <td>{{ "%.1f"|format(demographics.age_groups['19-35'] / demographics.total_patients * 100) }}%</td>
+                        </tr>
+                        <tr>
+                            <td>36-55</td>
+                            <td>{{ demographics.age_groups['36-55'] }}</td>
+                            <td>{{ "%.1f"|format(demographics.age_groups['36-55'] / demographics.total_patients * 100) }}%</td>
+                        </tr>
+                        <tr>
+                            <td>56-75</td>
+                            <td>{{ demographics.age_groups['56-75'] }}</td>
+                            <td>{{ "%.1f"|format(demographics.age_groups['56-75'] / demographics.total_patients * 100) }}%</td>
+                        </tr>
+                        <tr>
+                            <td>76+</td>
+                            <td>{{ demographics.age_groups['76+'] }}</td>
+                            <td>{{ "%.1f"|format(demographics.age_groups['76+'] / demographics.total_patients * 100) }}%</td>
+                        </tr>
+                        <tr>
+                            <td>Unknown</td>
+                            <td>{{ demographics.age_groups.unknown }}</td>
+                            <td>{{ "%.1f"|format(demographics.age_groups.unknown / demographics.total_patients * 100) }}%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-2">
+    <div class="card-header bg-dark text-white">
+        <i class="fas fa-info-circle"></i> Summary Statistics
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4 text-center">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Total Patients</h5>
+                        <p class="card-text display-4">{{ demographics.total_patients }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 text-center">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Gender Ratio (M:F)</h5>
+                        <p class="card-text display-4">
+                            {% if demographics.gender_counts.female > 0 %}
+                            {{ "%.1f"|format(demographics.gender_counts.male / demographics.gender_counts.female) }} : 1
+                            {% else %}
+                            N/A
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 text-center">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Average Age Group</h5>
+                        <p class="card-text display-4">
+                            {% if demographics.total_patients > 0 %}
+                            36-55
+                            {% else %}
+                            N/A
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card-footer">
+        <button class="btn btn-primary" hx-get="/fhir/Patients" hx-target="#content">
+            <i class="fas fa-arrow-left"></i> Back to Patient List
+        </button>
+    </div>
+</div>

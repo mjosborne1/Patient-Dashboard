@@ -1,4 +1,21 @@
 <h2 class="text-primary"><i class="fas fa-users"></i> Patients</h2>
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <div class="input-group">
+            <input type="search" id="patient-search" name="q" class="form-control" placeholder="Search patients..." 
+                   hx-post="/fhir/search_patients" 
+                   hx-trigger="keyup changed delay:500ms, search" 
+                   hx-target="#patients-table-body"
+                   hx-indicator="#search-indicator">
+            <span class="input-group-text">
+                <i class="fas fa-search"></i>
+                <span id="search-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-2" role="status"></span>
+            </span>
+        </div>
+    </div>
+</div>
+
 <div class="table-responsive">
     <table class="table table-striped table-hover">
         <thead class="table-dark">
@@ -12,7 +29,7 @@
                 <th><i class="fas fa-info-circle"></i> | Details</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="patients-table-body">
             {% for patient in patients %}
             <tr>
                 <td>{{ patient.id }}</td>
@@ -22,7 +39,16 @@
                 <td>{{ patient.address }}</td>
                 <td>{{ patient.telecom }}</td>
                 <td>
-                    <button class="btn btn-primary" hx-get="/fhir/Patient/{{ patient.id }}" hx-target="#content">View Details <i class="fas fa-arrow-right"></i></button>
+                    <button class="btn btn-primary position-relative" 
+                            hx-get="/fhir/Patient/{{ patient.id }}" 
+                            hx-target="#content"
+                            hx-indicator="this">
+                        <span>View Details <i class="fas fa-arrow-right"></i></span>
+                        <span class="htmx-indicator position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            <span class="visually-hidden">Loading...</span>
+                        </span>
+                    </button>
                 </td>
             </tr>
             {% endfor %}

@@ -2,9 +2,11 @@ from flask import Flask, render_template, jsonify, request
 import requests
 import logging
 from datetime import datetime
+import os  # Add os module for environment variables
 
 app = Flask(__name__)
-FHIR_SERVER = 'http://hapi.fhir.org/baseR4'
+# Use environment variable with fallback to current value
+FHIR_SERVER = os.environ.get('FHIR_SERVER_URL', 'http://hapi.fhir.org/baseR4')
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -12,6 +14,11 @@ logging.basicConfig(level=logging.INFO)
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/health')
+def health_check():
+    """Simple health check endpoint for monitoring"""
+    return jsonify({"status": "ok", "fhir_server": FHIR_SERVER})
 
 def process_patient_results(patients):
     """Process patient results for consistent display"""
@@ -59,7 +66,7 @@ def process_patient_results(patients):
 
 def get_patients_table_body():
     """Helper to get patient table body for reuse"""
-    response = requests.get(f"{FHIR_SERVER}/Patient?_count=10")
+    response = requests.get(f"{FHIR_SERVER}/Patient?_count=10", timeout=10)  # Added timeout
     if response.status_code == 200:
         patients = response.json().get('entry', [])
         processed_patients = process_patient_results(patients)
@@ -69,7 +76,7 @@ def get_patients_table_body():
 
 @app.route('/fhir/Patients')
 def get_patients():
-    response = requests.get(f"{FHIR_SERVER}/Patient?_count=10")
+    response = requests.get(f"{FHIR_SERVER}/Patient?_count=10", timeout=10)  # Added timeout
     if response.status_code == 200:
         patients = response.json().get('entry', [])
         processed_patients = process_patient_results(patients)
@@ -86,14 +93,19 @@ def search_patients():
         return get_patients_table_body()
     
     # Search patients by name or identifier
-    response = requests.get(f"{FHIR_SERVER}/Patient?_count=20&name:contains={search_term}")
-    
-    if response.status_code == 200:
-        patients = response.json().get('entry', [])
-        processed_patients = process_patient_results(patients)
-        return render_template('patient_table_body.html', patients=processed_patients)
-    else:
-        return "<tr><td colspan='7'>Error searching patients</td></tr>", 500
+    try:
+        response = requests.get(f"{FHIR_SERVER}/Patient?_count=20&name:contains={search_term}", timeout=10)
+        
+        if response.status_code == 200:
+            patients = response.json().get('entry', [])
+            processed_patients = process_patient_results(patients)
+            return render_template('patient_table_body.html', patients=processed_patients)
+        else:
+            logging.error(f"API error: {response.status_code} when searching patients")
+            return "<tr><td colspan='7'>Error searching patients</td></tr>", 500
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Request failed: {str(e)}")
+        return "<tr><td colspan='7'>Connection error, please try again</td></tr>", 500
 
 @app.route('/fhir/Patient/<patient_id>')
 def get_patient(patient_id):
@@ -555,4 +567,5 @@ def get_dashboard():
     return render_template('dashboard.html', **dashboard_data)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(debug=debug_mode)

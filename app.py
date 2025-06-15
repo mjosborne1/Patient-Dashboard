@@ -3,6 +3,7 @@ import requests
 import logging
 from datetime import datetime
 import os  # Add os module for environment variables
+import openai
 
 app = Flask(__name__)
 # Use environment variable with fallback to current value
@@ -565,6 +566,38 @@ def get_dashboard():
     }
     
     return render_template('dashboard.html', **dashboard_data)
+
+@app.route('/settings/ai')
+def ai_settings():
+    return render_template('ai_settings.html')
+
+@app.route('/test_openai_key', methods=['POST'])
+def test_openai_key():
+    api_key = request.json.get('api_key')
+    if not api_key:
+        return jsonify({'error': 'API key is required'}), 400
+
+    try:
+        # It's good practice to instantiate the client for each request that needs it,
+        # especially if the API key can change or if you want to ensure thread safety
+        # or specific configurations per request.
+        client = openai.OpenAI(api_key=api_key)
+
+        # Make a simple, low-cost API call to test the key
+        client.chat.completions.create(
+            model="gpt-4.1-nano-2025-04-14", # Specified model
+            messages=[{"role": "user", "content": "test"}]
+        )
+        return jsonify({'success': True, 'message': 'API key is valid.'})
+    except openai.AuthenticationError:
+        return jsonify({'success': False, 'message': 'API key is invalid or expired.'}), 401
+    except openai.APIError as e:
+        # Handle more specific API errors if needed
+        return jsonify({'success': False, 'message': f'OpenAI API error: {str(e)}'}), 500
+    except Exception as e:
+        # Catch any other unexpected errors
+        logging.error(f"Unexpected error during OpenAI key test: {str(e)}")
+        return jsonify({'success': False, 'message': f'An unexpected error occurred: {str(e)}'}), 500
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'

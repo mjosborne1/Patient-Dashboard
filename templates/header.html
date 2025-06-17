@@ -17,7 +17,7 @@
             <button id="connectMetamaskBtn" class="btn btn-outline-primary ms-2">Connect to Metamask</button>
             <button id="signInMetamaskBtn" class="btn btn-outline-success ms-2" style="display:none;">Sign In with Metamask</button>
             {% else %}
-            <span class="navbar-text ms-2" id="currentUserDisplay">Signed in as: {{ current_user.id }}</span>
+            <span class="navbar-text ms-2" id="currentUserDisplay">Signed in</span>
             <a href="{{ url_for('logout') }}" id="logoutBtn" class="btn btn-outline-danger ms-2">Logout</a>
             {% endif %}
         </div>

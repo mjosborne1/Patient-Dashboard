@@ -6,19 +6,61 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentAccount = null;
 
-    // Function to update UI based on login status (called on page load and after actions)
-    // This is a placeholder for now. The page reload handles most of this by letting Flask serve new state.
-    function updateLoginStatusUI() {
-        if (currentAccount) { // Connected to Metamask
-            if (connectMetamaskBtn) connectMetamaskBtn.style.display = 'none';
-            // signInMetamaskBtn visibility will be handled by page reload after login
-            // logoutBtn visibility will also be handled by page reload
-        } else { // Not connected
-            if (connectMetamaskBtn) connectMetamaskBtn.style.display = 'block';
-            if (signInMetamaskBtn) signInMetamaskBtn.style.display = 'none';
-            // if (logoutBtn) logoutBtn.style.display = 'none';
+    // Encapsulate the sign-in logic to be callable
+    async function signInProcess() {
+        if (!currentAccount) {
+            alert('Please connect to Metamask first.'); // Should not happen if called after connect
+            return;
+        }
+        try {
+            // 1. Fetch Nonce
+            const nonceResponse = await fetch(`/get_nonce_to_sign/${currentAccount}`);
+            if (!nonceResponse.ok) {
+                const errorData = await nonceResponse.json();
+                alert(`Error fetching nonce: ${errorData.error || nonceResponse.statusText}`);
+                return;
+            }
+            const nonceData = await nonceResponse.json();
+            const nonce = nonceData.nonce;
+            if (!nonce) {
+                alert('Nonce not received from server.');
+                return;
+            }
+            console.log('Nonce received:', nonce);
+
+            // 2. Request Signature
+            const signature = await window.ethereum.request({
+                method: 'personal_sign',
+                params: [nonce, currentAccount],
+            });
+            console.log('Signature received:', signature);
+
+            // 3. Verify Signature
+            const verifyResponse = await fetch('/verify_signature', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    signed_message: signature,
+                    original_nonce: nonce,
+                    wallet_address: currentAccount,
+                }),
+            });
+
+            const verifyData = await verifyResponse.json();
+            if (verifyResponse.ok && verifyData.success) {
+                alert('Successfully signed in!');
+                window.location.reload(); // Reload to reflect login state from server
+            } else {
+                alert(`Sign-in failed: ${verifyData.error || verifyData.message || 'Unknown error'}`);
+            }
+        } catch (error) {
+            console.error('Error during sign-in process:', error);
+            alert(`An error occurred: ${error.message || 'Check console for details.'}`);
         }
     }
+
 
     if (connectMetamaskBtn) {
         connectMetamaskBtn.addEventListener('click', async () => {
@@ -28,15 +70,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (accounts.length > 0) {
                         currentAccount = accounts[0];
                         console.log('Connected account:', currentAccount);
-
-                        if (signInMetamaskBtn) {
-                            signInMetamaskBtn.style.display = 'block'; // Show sign-in button
-                        }
-                        connectMetamaskBtn.style.display = 'none'; // Hide connect button
-
-                        // Optionally, display currentAccount somewhere
-                        // const accountDisplay = document.getElementById('accountDisplay');
-                        // if (accountDisplay) accountDisplay.textContent = `Connected: ${currentAccount}`;
+                        
+                        // Hide connect button, show and trigger sign-in button
+                        if (connectMetamaskBtn) connectMetamaskBtn.style.display = 'none';
+                        // No longer need to explicitly show signInMetamaskBtn or click it,
+                        // as we will call signInProcess directly.
+                        
+                        await signInProcess(); // Automatically start sign-in
 
                     } else {
                         currentAccount = null;
@@ -55,60 +95,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (signInMetamaskBtn) {
-        signInMetamaskBtn.addEventListener('click', async () => {
-            if (!currentAccount) {
-                alert('Please connect to Metamask first.');
-                return;
-            }
-
-            try {
-                // 1. Fetch Nonce
-                const nonceResponse = await fetch(`/get_nonce_to_sign/${currentAccount}`);
-                if (!nonceResponse.ok) {
-                    const errorData = await nonceResponse.json();
-                    alert(`Error fetching nonce: ${errorData.error || nonceResponse.statusText}`);
-                    return;
-                }
-                const nonceData = await nonceResponse.json();
-                const nonce = nonceData.nonce;
-                if (!nonce) {
-                    alert('Nonce not received from server.');
-                    return;
-                }
-                console.log('Nonce received:', nonce);
-
-                // 2. Request Signature
-                const signature = await window.ethereum.request({
-                    method: 'personal_sign',
-                    params: [nonce, currentAccount], // Metamask will handle hex-encoding if needed for the message
-                });
-                console.log('Signature received:', signature);
-
-                // 3. Verify Signature
-                const verifyResponse = await fetch('/verify_signature', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        signed_message: signature,
-                        original_nonce: nonce,
-                        wallet_address: currentAccount,
-                    }),
-                });
-
-                const verifyData = await verifyResponse.json();
-                if (verifyResponse.ok && verifyData.success) {
-                    alert('Successfully signed in!');
-                    window.location.reload(); // Reload to reflect login state from server
-                } else {
-                    alert(`Sign-in failed: ${verifyData.error || verifyData.message || 'Unknown error'}`);
-                }
-            } catch (error) {
-                console.error('Error during sign-in process:', error);
-                alert(`An error occurred: ${error.message || 'Check console for details.'}`);
-            }
-        });
+        // Keep the button in the DOM for structure but it won\'t be primary interaction point
+        // signInMetamaskBtn.addEventListener('click', signInProcess); // Original listener
+        // We can remove or hide this button if it is truly redundant now.
+        // For now, let\'s ensure it is hidden if connectMetamaskBtn is also hidden.
+        if (connectMetamaskBtn && connectMetamaskBtn.style.display === 'none') {
+            signInMetamaskBtn.style.display = 'none';
+        }
     }
 
     // Initial UI state check (basic)

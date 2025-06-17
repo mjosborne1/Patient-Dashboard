@@ -6,7 +6,7 @@ from datetime import datetime
 import os  # Add os module for environment variables
 import openai
 import binascii
-from eth_account.messages import defunct_hash_message
+from eth_account.messages import defunct_hash_message, encode_defunct
 from eth_account import Account
 
 app = Flask(__name__)
@@ -40,6 +40,9 @@ def load_user(user_id):
 
 @app.route('/')
 def index():
+    # Redirect unauthenticated users to the dedicated login page
+    if not current_user.is_authenticated:
+        return redirect(url_for('login'))
     return render_template('index.html')
 
 @app.route('/health')
@@ -645,9 +648,11 @@ def get_nonce_to_sign(wallet_address):
     if not (wallet_address.startswith('0x') and len(wallet_address) == 42):
         return jsonify({'error': 'Invalid wallet address format'}), 400
 
-    nonce = binascii.hexlify(os.urandom(16)).decode()
+    # Generate a more human-readable nonce for signing
+    nonce_bytes = os.urandom(16)
+    nonce = f"Sign this message to log in: {binascii.hexlify(nonce_bytes).decode()}"
     session[f'nonce_{wallet_address.lower()}'] = nonce # Store nonce with lowercase address
-    logging.info(f"Generated nonce {nonce} for address {wallet_address}")
+    logging.info(f"Generated nonce for address {wallet_address}: {nonce}")
     return jsonify({'nonce': nonce})
 
 @app.route('/verify_signature', methods=['POST'])
@@ -675,8 +680,9 @@ def verify_signature():
     session.pop(stored_nonce_key, None)
 
     try:
-        message_hash = defunct_hash_message(text=original_nonce)
-        recovered_address = Account.recover_message(message_hash, signature=signed_message)
+        # Use encode_defunct treating original_nonce as the text that was signed
+        signable_message = encode_defunct(text=original_nonce)
+        recovered_address = Account.recover_message(signable_message, signature=signed_message)
 
         if recovered_address.lower() == wallet_address.lower():
             user = User(id=wallet_address.lower()) # Use lowercase for consistency
@@ -699,12 +705,10 @@ def logout():
 
 @app.route('/login')
 def login():
-    # This page should ideally present the "Connect Metamask" button.
-    # For now, it can just render the index, assuming index.html contains the connect logic.
-    # If current_user is already authenticated, redirect to index or a dashboard.
+    # Show dedicated login page for unauthenticated users
     if current_user.is_authenticated:
         return redirect(url_for('index'))
-    return render_template('index.html') # Or a dedicated login.html if you create one
+    return render_template('login.html')
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'

@@ -58,15 +58,6 @@
     <div class="main-content">
         <div class="content-wrapper">
             <div class="container-fluid">
-                {% if not current_user.is_authenticated %}
-                <div class="alert alert-info mt-3" role="alert">
-                    Please connect your Metamask wallet and sign in to continue. The connect/sign-in buttons are in the header above.
-                </div>
-                <div id="content" class="fade-me-in">
-                    <!-- Content for unauthenticated users can be minimal or guide them to login -->
-                    <p class="text-center mt-5">Welcome! Please sign in using Metamask.</p>
-                </div>
-                {% else %}
                 <div id="content" class="fade-me-in" hx-get="/fhir/Patients" hx-trigger="load" hx-swap="innerHTML transition:true">
                     <!-- Content will be loaded here for authenticated users -->
                     <div class="d-flex justify-content-center mt-5">

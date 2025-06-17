@@ -1,16 +1,42 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 import requests
 import logging
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from datetime import datetime
 import os  # Add os module for environment variables
 import openai
+import binascii
+from eth_account.messages import defunct_hash_message
+from eth_account import Account
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24) # Needed for Flask session management
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login' # Or your preferred login route
+
 # Use environment variable with fallback to current value
 FHIR_SERVER = os.environ.get('FHIR_SERVER_URL', 'http://hapi.fhir.org/baseR4')
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
+
+# User model for Flask-Login
+class User(UserMixin):
+    def __init__(self, id):
+        self.id = id # wallet_address will be the id
+
+    @staticmethod
+    def get(user_id):
+        # This is a simplified 'get' method. In a real app, you might query a database.
+        # For this example, if a user_id is provided, we create a User object.
+        # Flask-Login uses this to manage the user session.
+        return User(user_id)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.get(user_id)
 
 @app.route('/')
 def index():
@@ -76,6 +102,7 @@ def get_patients_table_body():
         return "<tr><td colspan='7'>Error loading patients</td></tr>", 500
 
 @app.route('/fhir/Patients')
+@login_required
 def get_patients():
     response = requests.get(f"{FHIR_SERVER}/Patient?_count=10", timeout=10)  # Added timeout
     if response.status_code == 200:
@@ -86,6 +113,7 @@ def get_patients():
         return jsonify({"error": "Failed to fetch patients"}), 500
 
 @app.route('/fhir/search_patients', methods=['POST'])
+@login_required
 def search_patients():
     search_term = request.form.get('q', '').strip().lower()
     
@@ -109,6 +137,7 @@ def search_patients():
         return "<tr><td colspan='7'>Connection error, please try again</td></tr>", 500
 
 @app.route('/fhir/Patient/<patient_id>')
+@login_required
 def get_patient(patient_id):
     response = requests.get(f"{FHIR_SERVER}/Patient/{patient_id}")
     if response.status_code == 200:
@@ -159,6 +188,7 @@ def get_patient(patient_id):
         return jsonify({"error": "Failed to fetch patient details"}), 500
 
 @app.route('/fhir/LabResults/<patient_id>')
+@login_required
 def get_lab_results(patient_id):
     response = requests.get(f"{FHIR_SERVER}/Observation?patient={patient_id}&_sort=-date&_count=5")
     if response.status_code == 200:
@@ -174,6 +204,7 @@ def get_lab_results(patient_id):
         return "Lab results not found", 404
 
 @app.route('/fhir/VitalSigns/<patient_id>')
+@login_required
 def get_vital_signs(patient_id):
     # First, get blood pressure observations
     bp_response = requests.get(f"{FHIR_SERVER}/Observation?patient={patient_id}&code=http://loinc.org|85354-9&_sort=-date&_count=10")
@@ -325,6 +356,7 @@ def get_vital_signs(patient_id):
     return render_template('vital_signs.html', vital_signs=vital_signs)
 
 @app.route('/fhir/Medications/<patient_id>')
+@login_required
 def get_medications(patient_id):
     # Get medications
     meds_response = requests.get(f"{FHIR_SERVER}/MedicationRequest?patient={patient_id}&_count=10")
@@ -387,6 +419,7 @@ def get_medications(patient_id):
     return render_template('medications.html', medications=medications)
 
 @app.route('/fhir/Allergies/<patient_id>')
+@login_required
 def get_allergies(patient_id):
     # Get allergies
     allergy_response = requests.get(f"{FHIR_SERVER}/AllergyIntolerance?patient={patient_id}&_count=10")
@@ -459,6 +492,7 @@ def get_allergies(patient_id):
     return render_template('allergies.html', allergies=allergies)
 
 @app.route('/fhir/Demographics')
+@login_required
 def get_demographics():
     """Get patient demographics statistics for visualization"""
     # Fetch patients for demographic analysis
@@ -520,6 +554,7 @@ def get_demographics():
         return jsonify({"error": "Failed to fetch patient demographics"}), 500
 
 @app.route('/fhir/Dashboard')
+@login_required
 def get_dashboard():
     """Get dashboard data for the main dashboard view"""
     # Fetch patients
@@ -568,10 +603,12 @@ def get_dashboard():
     return render_template('dashboard.html', **dashboard_data)
 
 @app.route('/settings/ai')
+@login_required
 def ai_settings():
     return render_template('ai_settings.html')
 
 @app.route('/test_openai_key', methods=['POST'])
+@login_required
 def test_openai_key():
     api_key = request.json.get('api_key')
     if not api_key:
@@ -598,6 +635,76 @@ def test_openai_key():
         # Catch any other unexpected errors
         logging.error(f"Unexpected error during OpenAI key test: {str(e)}")
         return jsonify({'success': False, 'message': f'An unexpected error occurred: {str(e)}'}), 500
+
+@app.route('/get_nonce_to_sign/<wallet_address>')
+def get_nonce_to_sign(wallet_address):
+    if not wallet_address:
+        return jsonify({'error': 'Wallet address is required'}), 400
+
+    # Basic validation for wallet address format (optional but good)
+    if not (wallet_address.startswith('0x') and len(wallet_address) == 42):
+        return jsonify({'error': 'Invalid wallet address format'}), 400
+
+    nonce = binascii.hexlify(os.urandom(16)).decode()
+    session[f'nonce_{wallet_address.lower()}'] = nonce # Store nonce with lowercase address
+    logging.info(f"Generated nonce {nonce} for address {wallet_address}")
+    return jsonify({'nonce': nonce})
+
+@app.route('/verify_signature', methods=['POST'])
+def verify_signature():
+    data = request.json
+    signed_message = data.get('signed_message')
+    original_nonce = data.get('original_nonce')
+    wallet_address = data.get('wallet_address')
+
+    if not all([signed_message, original_nonce, wallet_address]):
+        return jsonify({'success': False, 'error': 'Missing required parameters.'}), 400
+
+    stored_nonce_key = f'nonce_{wallet_address.lower()}'
+    stored_nonce = session.get(stored_nonce_key)
+
+    if not stored_nonce:
+        logging.warning(f"No nonce found in session for address {wallet_address}")
+        return jsonify({'success': False, 'error': 'Nonce not found in session or session expired.'}), 400
+
+    if original_nonce != stored_nonce:
+        logging.warning(f"Nonce mismatch for address {wallet_address}. Given: {original_nonce}, Stored: {stored_nonce}")
+        return jsonify({'success': False, 'error': 'Nonce mismatch. Possible replay attack.'}), 400
+
+    # Nonce verified, remove from session
+    session.pop(stored_nonce_key, None)
+
+    try:
+        message_hash = defunct_hash_message(text=original_nonce)
+        recovered_address = Account.recover_message(message_hash, signature=signed_message)
+
+        if recovered_address.lower() == wallet_address.lower():
+            user = User(id=wallet_address.lower()) # Use lowercase for consistency
+            login_user(user)
+            logging.info(f"Successfully verified signature for address {wallet_address}. User logged in.")
+            return jsonify({'success': True, 'message': 'Signature verified. User logged in.'})
+        else:
+            logging.warning(f"Signature verification failed for address {wallet_address}. Recovered: {recovered_address.lower()}")
+            return jsonify({'success': False, 'error': 'Signature verification failed.'}), 401
+    except Exception as e: # Catching broad exceptions, consider more specific ones like BadSignature
+        logging.error(f"Error during signature recovery for {wallet_address}: {str(e)}")
+        return jsonify({'success': False, 'error': f'Invalid signature or recovery failed: {str(e)}'}), 400
+
+@app.route('/logout')
+@login_required # Ensure user is logged in to log out
+def logout():
+    logout_user()
+    logging.info("User logged out.")
+    return redirect(url_for('index'))
+
+@app.route('/login')
+def login():
+    # This page should ideally present the "Connect Metamask" button.
+    # For now, it can just render the index, assuming index.html contains the connect logic.
+    # If current_user is already authenticated, redirect to index or a dashboard.
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    return render_template('index.html') # Or a dedicated login.html if you create one
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'

@@ -52,27 +52,14 @@
         </div>
     </nav>
 
-    <!-- Header -->
-    <header class="bg-dark text-white p-3 mb-4 with-sidebar">
-        <div class="container-fluid d-flex justify-content-between align-items-center">
-            <h1 class="h3 mb-0">FHIR Dash</h1>
-            <div class="d-flex">
-                <button class="btn btn-outline-light ms-2" hx-get="/fhir/Profile" hx-target="#content" hx-swap="innerHTML transition:true">
-                    <i class="fas fa-user-cog"></i> Profile
-                </button>
-                <button class="btn btn-outline-light ms-2" hx-get="/fhir/Logout" hx-target="#content" hx-swap="innerHTML transition:true">
-                    <i class="fas fa-sign-out-alt"></i> Logout
-                </button>
-            </div>
-        </div>
-    </header>
+    {% include "header.html" %}
 
     <!-- Main Content -->
     <div class="main-content">
         <div class="content-wrapper">
             <div class="container-fluid">
                 <div id="content" class="fade-me-in" hx-get="/fhir/Patients" hx-trigger="load" hx-swap="innerHTML transition:true">
-                    <!-- Content will be loaded here -->
+                    <!-- Content will be loaded here for authenticated users -->
                     <div class="d-flex justify-content-center mt-5">
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">Loading...</span>

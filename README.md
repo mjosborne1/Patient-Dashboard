@@ -18,6 +18,7 @@ A modern Flask app for exploring patient data from a FHIR API, using [HTMX](http
 
 ## 🛠️ Quickstart
 
+- To clone and run the original Davey Mason code...
 ```bash
 git clone https://github.com/daveymason/Patient-Dashboard-htmx-python-fhir.git
 cd Patient-Dashboard-htmx-python-fhir
@@ -29,6 +30,16 @@ source venv/bin/activate
 pip install flask requests
 python app.py
 ```
+- To clone and run this fork of the repo...
+```bash
+git clone https://github.com/mjosborne1/Patient-Dashboard
+cd Patient-Dashboard
+# I use VS Code Create Python environment here, which is essentially...
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+```
 
 Visit [http://127.0.0.1:5000/](http://127.0.0.1:5000/) in your browser.
 
@@ -36,7 +47,7 @@ Visit [http://127.0.0.1:5000/](http://127.0.0.1:5000/) in your browser.
 
 ## 🤝 Contributing
 
-1. Fork & clone the repo
+1. Fork & clone the original [repo](https://github.com/daveymason/Patient-Dashboard-htmx-python-fhir.git)
 2. Create a feature branch
 3. Commit & push your changes
 4. Open a pull request
@@ -56,4 +67,10 @@ MIT License. See [LICENSE](LICENSE).
 
 ---
 
-[Project Repository](https://github.com/daveymason/Patient-Dashboard-htmx-python-fhir)
+[Original Project Repository](https://github.com/daveymason/Patient-Dashboard-htmx-python-fhir)
+
+
+---
+    I'd just like to acknowledge Davey Mason for this amazing starter kit. Thanks Davey!!!
+
+    Michael Osborne

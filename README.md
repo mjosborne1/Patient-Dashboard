@@ -38,7 +38,16 @@ cd Patient-Dashboard
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+# IMPORTANT: BEFORE YOU RUN THE APP
+# create a `.env` file in the root folder to contain your FHIR Server credentials (Basic Auth only). See below for an example. 
 python app.py
+```
+
+- Example `.env` file, all values are fictitious of course
+```
+FHIR_USERNAME='Tester'
+FHIR_PASSWORD='Password4Tester'
+FHIR_SERVER='https://yourfhirserver.com/partition/fhir'
 ```
 
 Visit [http://127.0.0.1:5000/](http://127.0.0.1:5000/) in your browser.

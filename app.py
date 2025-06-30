@@ -1,23 +1,19 @@
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from flask import Flask, g, render_template, jsonify, request, session, redirect, url_for
 import requests
 import logging
-from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_login import LoginManager, AnonymousUserMixin, UserMixin, login_user, logout_user, login_required, current_user
 from datetime import datetime
 import os  # Add os module for environment variables
-import openai
-import binascii
-from eth_account.messages import defunct_hash_message, encode_defunct
-from eth_account import Account
+from fhirpathpy import evaluate
+from fhirutils import fhir_get, format_fhir_date
+
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24) # Needed for Flask session management
 
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login' # Or your preferred login route
 
-# Use environment variable with fallback to current value
-FHIR_SERVER = os.environ.get('FHIR_SERVER_URL', 'http://hapi.fhir.org/baseR4')
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -34,21 +30,45 @@ class User(UserMixin):
         # Flask-Login uses this to manage the user session.
         return User(user_id)
 
+# Mock user for always-authenticated sessions
+class MockUser(UserMixin):
+    def __init__(self):
+        self.id = "mockuser"
+
+    @property
+    def is_authenticated(self):
+        return True
+    
 @login_manager.user_loader
 def load_user(user_id):
     return User.get(user_id)
 
+# Automatically log in the mock user for every request
+@app.before_request
+def auto_login():
+    from flask_login import login_user, current_user
+    if not current_user.is_authenticated:
+        login_user(MockUser())
+
+def get_fhir_server_url():
+    # Prefer user-supplied, fallback to default
+    url = request.json.get('fhir_server_url') if request.is_json and request.json is not None else None
+    if not url:
+        url = os.environ.get('FHIR_SERVER_URL', 'https://smile.sparked-fhir.com/aucore/fhir/DEFAULT')
+    return url
+
 @app.route('/')
 def index():
     # Redirect unauthenticated users to the dedicated login page
-    if not current_user.is_authenticated:
-        return redirect(url_for('login'))
+    # if not current_user.is_authenticated:
+    #     return redirect(url_for('login'))
     return render_template('index.html')
 
 @app.route('/health')
 def health_check():
     """Simple health check endpoint for monitoring"""
-    return jsonify({"status": "ok", "fhir_server": FHIR_SERVER})
+    fhir_server_url = get_fhir_server_url()
+    return jsonify({"status": "ok", "fhir_server": fhir_server_url})
 
 def process_patient_results(patients):
     """Process patient results for consistent display"""
@@ -96,7 +116,7 @@ def process_patient_results(patients):
 
 def get_patients_table_body():
     """Helper to get patient table body for reuse"""
-    response = requests.get(f"{FHIR_SERVER}/Patient?_count=10", timeout=10)  # Added timeout
+    response = fhir_get("/Patient?_count=10", fhir_server_url=get_fhir_server_url(), timeout=10)
     if response.status_code == 200:
         patients = response.json().get('entry', [])
         processed_patients = process_patient_results(patients)
@@ -107,7 +127,7 @@ def get_patients_table_body():
 @app.route('/fhir/Patients')
 @login_required
 def get_patients():
-    response = requests.get(f"{FHIR_SERVER}/Patient?_count=10", timeout=10)  # Added timeout
+    response = fhir_get("/Patient?_count=10", fhir_server_url=get_fhir_server_url(), timeout=10)
     if response.status_code == 200:
         patients = response.json().get('entry', [])
         processed_patients = process_patient_results(patients)
@@ -117,7 +137,7 @@ def get_patients():
 
 @app.route('/fhir/search_patients', methods=['POST'])
 @login_required
-def search_patients():
+def search_patients():   
     search_term = request.form.get('q', '').strip().lower()
     
     if not search_term:
@@ -126,11 +146,23 @@ def search_patients():
     
     # Search patients by name or identifier
     try:
-        response = requests.get(f"{FHIR_SERVER}/Patient?_count=20&name:contains={search_term}", timeout=10)
-        
+        # Fetch a bundle of patients (increase _count as needed)
+        response = fhir_get("/Patient?_count=1000", fhir_server_url=get_fhir_server_url(), timeout=10)
         if response.status_code == 200:
             patients = response.json().get('entry', [])
-            processed_patients = process_patient_results(patients)
+            # Filter patients by name (case-insensitive, anywhere in given or family)
+            filtered_patients = []
+            for entry in patients:
+                resource = entry.get('resource', {})
+                names = resource.get('name', [])
+                for name in names:
+                    given_names = ' '.join(name.get('given', []))
+                    family_name = name.get('family', '')
+                    full_name = f"{given_names} {family_name}".strip().lower()
+                    if search_term in full_name:
+                        filtered_patients.append(entry)
+                        break  # Only need to match one name per patient
+            processed_patients = process_patient_results(filtered_patients)
             return render_template('patient_table_body.html', patients=processed_patients)
         else:
             logging.error(f"API error: {response.status_code} when searching patients")
@@ -142,7 +174,7 @@ def search_patients():
 @app.route('/fhir/Patient/<patient_id>')
 @login_required
 def get_patient(patient_id):
-    response = requests.get(f"{FHIR_SERVER}/Patient/{patient_id}")
+    response = fhir_get(f"/Patient/{patient_id}", fhir_server_url=get_fhir_server_url(), timeout=10)       
     if response.status_code == 200:
         patient = response.json()
 
@@ -190,39 +222,142 @@ def get_patient(patient_id):
     else:
         return jsonify({"error": "Failed to fetch patient details"}), 500
 
+@app.route('/fhir/Procedures/<patient_id>')
+@login_required
+def get_procedures(patient_id):
+    response = fhir_get(f"/Procedure?subject={patient_id}&_sort=-date&_count=5", fhir_server_url=get_fhir_server_url(), timeout=10)
+    if response.status_code == 200:
+        procedures = response.json().get('entry', [])
+        # Prepare procedures for rendering
+        for proc in procedures:
+            resource = proc['resource']
+            performedDateTime = resource.get('performedDateTime', '')
+            if performedDateTime:
+                try:
+                    if 'T' in performedDateTime:
+                        formatted_date = datetime.strptime(performedDateTime[:19], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%d')
+                    else:
+                        formatted_date = datetime.strptime(performedDateTime, '%Y-%m-%d').strftime('%Y-%m-%d')
+                except ValueError:
+                    formatted_date = performedDateTime
+                resource['performedDate'] = formatted_date
+            else:
+                resource['performedDate'] = ''
+            # Get name of procedure
+            resource['procName'] = 'Unknown'
+            code = resource.get('code', {})
+            codings = code.get('coding', [])
+            for coding in codings:
+                if coding.get('system') == "http://snomed.info/sct":
+                    if coding.get('display'):
+                        resource['procName'] = coding.get('display')
+                    else:
+                        resource['procName'] = code.get('text', 'Unknown')
+            # Get Reason for Procedure
+            resource['procReason'] = 'Unknown'
+            for reason in resource.get('reasonCode', []):
+                codings = reason.get('coding', [])
+                for coding in codings:
+                    if coding.get('display'):
+                        resource['procReason'] = coding.get('display')
+                    else:
+                        resource['procReason'] = reason.get('text', 'Unknown')
+        return render_template('procedures.html', procedures=[proc['resource'] for proc in procedures])
+    else:
+        return "Procedures not found", 404
+
+@app.route('/fhir/Immunisation/<patient_id>')
+@login_required
+def get_immunizations(patient_id):
+    response = fhir_get(
+        f"/Immunization?patient={patient_id}&_sort=-date&_count=10",
+        fhir_server_url=get_fhir_server_url(),
+        timeout=10
+    )
+    if response.status_code == 200:
+        immunisations = response.json().get('entry', [])
+        processed_immunisations = []
+        for entry in immunisations:
+            resource = entry.get('resource', {})
+            # Vaccine display
+            vaccine_display = "Unknown"
+            vaccine_code = resource.get('vaccineCode', {})
+            codings = vaccine_code.get('coding', [])
+            # Try to get display from coding, else fallback to text
+            if codings and codings[0].get('display'):
+                vaccine_display = codings[0]['display']
+            elif vaccine_code.get('text'):
+                vaccine_display = vaccine_code['text']
+            else:
+                vaccine_display = "Unknown"
+            # Occurrence DateTime
+            occurrence = resource.get('occurrenceDateTime', '')            
+            dt_occurrence = format_fhir_date(occurrence)
+            # Status
+            status = resource.get('status', 'unknown')
+            # Create vaccination summary
+            processed_immunisations.append({
+                'vaccine': vaccine_display,
+                'date': dt_occurrence,
+                'status': status
+            })
+        return render_template('immunisations.html', immunisations=processed_immunisations)
+    else:
+        return "Immunisation not found", 404
+
 @app.route('/fhir/LabResults/<patient_id>')
 @login_required
 def get_lab_results(patient_id):
-    response = requests.get(f"{FHIR_SERVER}/Observation?patient={patient_id}&_sort=-date&_count=5")
+    response = fhir_get(f"/Observation?patient={patient_id}&_sort=-date&_count=5", fhir_server_url=get_fhir_server_url(), timeout=10)
     if response.status_code == 200:
         lab_results = response.json().get('entry', [])
-        # Prepare lab results for rendering
+         # Filter for laboratory category in Python
+        filtered_lab_results = []
         for result in lab_results:
-            effectiveDateTime = result['resource'].get('effectiveDateTime', '')
-            formatted_date = datetime.strptime(effectiveDateTime[:-6], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%d')
-            result['resource']['formattedDate'] = formatted_date
+            resource = result.get('resource', {})
+            categories = resource.get('category', [])
+            for cat in categories:
+                codings = cat.get('coding', [])
+                for coding in codings:
+                    if (
+                        coding.get('system') == "http://terminology.hl7.org/CodeSystem/observation-category"
+                        and coding.get('code') == "laboratory"
+                    ):
+                        filtered_lab_results.append(result)
+                        break  # Found laboratory, no need to check further
+                else:
+                    continue
+                break  # Break outer loop if found
+        # Prepare lab results for rendering
+        for result in filtered_lab_results:
+            effectiveDateTime = result['resource'].get('performedDateTime', '')
+            dt_observation = format_fhir_date(effectiveDateTime)
+            result['resource']['formattedDate'] = dt_observation 
         # Render the results into HTML using the lab_results template
-        return render_template('lab_results.html', lab_results=lab_results)
+        return render_template('lab_results.html', lab_results=filtered_lab_results)
     else:
         return "Lab results not found", 404
 
 @app.route('/fhir/VitalSigns/<patient_id>')
 @login_required
 def get_vital_signs(patient_id):
-    # First, get blood pressure observations
-    bp_response = requests.get(f"{FHIR_SERVER}/Observation?patient={patient_id}&code=http://loinc.org|85354-9&_sort=-date&_count=10")
+    # First, get blood pressure observations  85354-9 or 75367002
+    bp_response = fhir_get(
+        f"/Observation?patient={patient_id}&code=http://loinc.org|85354-9,http://snomed.info/sct|75367002&_sort=-date&_count=10", fhir_server_url=get_fhir_server_url(), timeout=10)
     
-    # Get heart rate observations
-    hr_response = requests.get(f"{FHIR_SERVER}/Observation?patient={patient_id}&code=http://loinc.org|8867-4&_sort=-date&_count=10")
+    # Get heart rate observations 8867-4 or http://snomed.info/sct|364075005
+    hr_response = fhir_get(
+        f"Observation?patient={patient_id}&code=http://loinc.org|8867-4,http://snomed.info/sct|364075005&_sort=-date&_count=10", fhir_server_url=get_fhir_server_url(), timeout=10) 
     
-    # Get temperature observations
-    temp_response = requests.get(f"{FHIR_SERVER}/Observation?patient={patient_id}&code=http://loinc.org|8310-5&_sort=-date&_count=10")
+    # Get temperature observations. 8310-5 or 386725007
+    temp_response = fhir_get(
+        f"/Observation?patient={patient_id}&code=http://loinc.org|8310-5,http://snomed.info/sct|386725007&_sort=-date&_count=10", fhir_server_url=get_fhir_server_url(), timeout=10)
     
-    # Get respiratory rate observations
-    resp_response = requests.get(f"{FHIR_SERVER}/Observation?patient={patient_id}&code=http://loinc.org|9279-1&_sort=-date&_count=10")
-    
-    vital_signs = []
-    
+    # Get respiratory rate observations 9279-1 or 86290005
+    resp_response = fhir_get(
+        f"/Observation?patient={patient_id}&code=http://loinc.org|9279-1,http://snomed.info/sct|86290005&_sort=-date&_count=10", fhir_server_url=get_fhir_server_url(), timeout=10)
+
+    vital_signs = []    
     # Process blood pressure readings
     if bp_response.status_code == 200:
         bp_data = bp_response.json().get('entry', [])
@@ -231,13 +366,7 @@ def get_vital_signs(patient_id):
             
             # Extract the date
             effective_date = resource.get('effectiveDateTime', '')
-            if effective_date:
-                try:
-                    formatted_date = datetime.strptime(effective_date[:-6], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%d')
-                except (ValueError, TypeError):
-                    formatted_date = 'Unknown Date'
-            else:
-                formatted_date = 'Unknown Date'
+            dt_observation = format_fhir_date(effective_date)
                 
             # Extract components (systolic/diastolic)
             components = resource.get('component', [])
@@ -254,7 +383,7 @@ def get_vital_signs(patient_id):
             # Only add if we have both systolic and diastolic
             if systolic is not None and diastolic is not None:
                 vital_signs.append({
-                    'date': formatted_date,
+                    'date': dt_observation,
                     'type': 'Blood Pressure',
                     'value': f'{systolic}/{diastolic}',
                     'unit': 'mmHg',
@@ -273,13 +402,7 @@ def get_vital_signs(patient_id):
             
             # Extract the date
             effective_date = resource.get('effectiveDateTime', '')
-            if effective_date:
-                try:
-                    formatted_date = datetime.strptime(effective_date[:-6], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%d')
-                except (ValueError, TypeError):
-                    formatted_date = 'Unknown Date'
-            else:
-                formatted_date = 'Unknown Date'
+            dt_observation = format_fhir_date(effective_date)           
                 
             # Get heart rate value
             value_quantity = resource.get('valueQuantity', {})
@@ -292,7 +415,7 @@ def get_vital_signs(patient_id):
                 value = 0
             
             vital_signs.append({
-                'date': formatted_date,
+                'date': dt_observation,
                 'type': 'Heart Rate',
                 'value': value,
                 'unit': value_quantity.get('unit', 'bpm'),
@@ -307,19 +430,13 @@ def get_vital_signs(patient_id):
             
             # Extract the date
             effective_date = resource.get('effectiveDateTime', '')
-            if effective_date:
-                try:
-                    formatted_date = datetime.strptime(effective_date[:-6], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%d')
-                except (ValueError, TypeError):
-                    formatted_date = 'Unknown Date'
-            else:
-                formatted_date = 'Unknown Date'
+            dt_observation = format_fhir_date(effective_date)
                 
             # Get temperature value
             value_quantity = resource.get('valueQuantity', {})
             
             vital_signs.append({
-                'date': formatted_date,
+                'date': dt_observation,
                 'type': 'Temperature',
                 'value': value_quantity.get('value', 'Unknown'),
                 'unit': value_quantity.get('unit', '°C'),
@@ -334,19 +451,13 @@ def get_vital_signs(patient_id):
             
             # Extract the date
             effective_date = resource.get('effectiveDateTime', '')
-            if effective_date:
-                try:
-                    formatted_date = datetime.strptime(effective_date[:-6], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%d')
-                except (ValueError, TypeError):
-                    formatted_date = 'Unknown Date'
-            else:
-                formatted_date = 'Unknown Date'
+            dt_observation = format_fhir_date(effective_date)
                 
             # Get respiratory rate value
             value_quantity = resource.get('valueQuantity', {})
             
             vital_signs.append({
-                'date': formatted_date,
+                'date': dt_observation,
                 'type': 'Respiratory Rate',
                 'value': value_quantity.get('value', 'Unknown'),
                 'unit': value_quantity.get('unit', '/min'),
@@ -362,9 +473,8 @@ def get_vital_signs(patient_id):
 @login_required
 def get_medications(patient_id):
     # Get medications
-    meds_response = requests.get(f"{FHIR_SERVER}/MedicationRequest?patient={patient_id}&_count=10")
-    
     medications = []
+    meds_response = fhir_get(f"/MedicationRequest?patient={patient_id}&_count=10", fhir_server_url=get_fhir_server_url(), timeout=10)       
     
     if meds_response.status_code == 200:
         meds_data = meds_response.json()
@@ -375,13 +485,7 @@ def get_medications(patient_id):
                 
                 # Extract the date
                 authored_date = resource.get('authoredOn', '')
-                if authored_date:
-                    try:
-                        formatted_date = datetime.strptime(authored_date[:10], '%Y-%m-%d').strftime('%Y-%m-%d')
-                    except (ValueError, TypeError):
-                        formatted_date = 'Unknown Date'
-                else:
-                    formatted_date = 'Unknown Date'
+                dt_authored = format_fhir_date(authored_date)
                 
                 # Extract medication reference or codeable concept
                 medication_name = "Unknown Medication"
@@ -406,7 +510,7 @@ def get_medications(patient_id):
                 status = resource.get('status', 'unknown')
                 
                 medications.append({
-                    'date': formatted_date,
+                    'date': dt_authored,
                     'name': medication_name,
                     'dosage': ', '.join(dosage_instructions) if dosage_instructions else 'No specific instructions',
                     'status': status
@@ -425,10 +529,9 @@ def get_medications(patient_id):
 @login_required
 def get_allergies(patient_id):
     # Get allergies
-    allergy_response = requests.get(f"{FHIR_SERVER}/AllergyIntolerance?patient={patient_id}&_count=10")
-    
-    allergies = []
-    
+    allergy_response = fhir_get(
+        f"/AllergyIntolerance?patient={patient_id}&_count=10", get_fhir_server_url(), timeout=10)      
+    allergies = []    
     if allergy_response.status_code == 200:
         allergy_data = allergy_response.json()
         # Check if 'entry' exists in the response
@@ -438,13 +541,7 @@ def get_allergies(patient_id):
                 
                 # Extract the date
                 recorded_date = resource.get('recordedDate', '')
-                if recorded_date:
-                    try:
-                        formatted_date = datetime.strptime(recorded_date[:10], '%Y-%m-%d').strftime('%Y-%m-%d')
-                    except (ValueError, TypeError):
-                        formatted_date = 'Unknown Date'
-                else:
-                    formatted_date = 'Unknown Date'
+                dt_recorded = format_fhir_date(recorded_date)               
                 
                 # Extract allergy code or display
                 allergy_name = "Unknown Allergen"
@@ -478,7 +575,7 @@ def get_allergies(patient_id):
                 severity = resource.get('severity', 'unknown')
                 
                 allergies.append({
-                    'date': formatted_date,
+                    'date': dt_recorded,
                     'name': allergy_name,
                     'reactions': reactions,
                     'severity': severity,
@@ -499,7 +596,8 @@ def get_allergies(patient_id):
 def get_demographics():
     """Get patient demographics statistics for visualization"""
     # Fetch patients for demographic analysis
-    response = requests.get(f"{FHIR_SERVER}/Patient?_count=100")
+    response = fhir_get(
+        f"/Patient?_count=100", fhir_server_url=get_fhir_server_url(), timeout=10)  
     
     if response.status_code == 200:
         patients = response.json().get('entry', [])
@@ -561,10 +659,12 @@ def get_demographics():
 def get_dashboard():
     """Get dashboard data for the main dashboard view"""
     # Fetch patients
-    patient_response = requests.get(f"{FHIR_SERVER}/Patient?_count=100")
+    patient_response = fhir_get(
+        f"/Patient?_count=100", fhir_server_url=get_fhir_server_url(), timeout=10)  
     
     # Fetch observations count
-    observation_response = requests.get(f"{FHIR_SERVER}/Observation?_summary=count")
+    observation_response = fhir_get(
+        f"/Observation?_summary=count", fhir_server_url=get_fhir_server_url(), timeout=10)  
     
     patient_count = 0
     observation_count = 0
@@ -600,101 +700,11 @@ def get_dashboard():
         'observation_count': observation_count,
         'gender_counts': gender_counts,
         'recent_patients': recent_patients,
-        'fhir_server_url': FHIR_SERVER
+        'fhir_server_url': get_fhir_server_url()
     }
     
     return render_template('dashboard.html', **dashboard_data)
 
-@app.route('/settings/ai')
-@login_required
-def ai_settings():
-    return render_template('ai_settings.html')
-
-@app.route('/test_openai_key', methods=['POST'])
-@login_required
-def test_openai_key():
-    api_key = request.json.get('api_key')
-    if not api_key:
-        return jsonify({'error': 'API key is required'}), 400
-
-    try:
-        # It's good practice to instantiate the client for each request that needs it,
-        # especially if the API key can change or if you want to ensure thread safety
-        # or specific configurations per request.
-        client = openai.OpenAI(api_key=api_key)
-
-        # Make a simple, low-cost API call to test the key
-        client.chat.completions.create(
-            model="gpt-4.1-nano-2025-04-14", # Specified model
-            messages=[{"role": "user", "content": "test"}]
-        )
-        return jsonify({'success': True, 'message': 'API key is valid.'})
-    except openai.AuthenticationError:
-        return jsonify({'success': False, 'message': 'API key is invalid or expired.'}), 401
-    except openai.APIError as e:
-        # Handle more specific API errors if needed
-        return jsonify({'success': False, 'message': f'OpenAI API error: {str(e)}'}), 500
-    except Exception as e:
-        # Catch any other unexpected errors
-        logging.error(f"Unexpected error during OpenAI key test: {str(e)}")
-        return jsonify({'success': False, 'message': f'An unexpected error occurred: {str(e)}'}), 500
-
-@app.route('/get_nonce_to_sign/<wallet_address>')
-def get_nonce_to_sign(wallet_address):
-    if not wallet_address:
-        return jsonify({'error': 'Wallet address is required'}), 400
-
-    # Basic validation for wallet address format (optional but good)
-    if not (wallet_address.startswith('0x') and len(wallet_address) == 42):
-        return jsonify({'error': 'Invalid wallet address format'}), 400
-
-    # Generate a more human-readable nonce for signing
-    nonce_bytes = os.urandom(16)
-    nonce = f"Sign this message to log in: {binascii.hexlify(nonce_bytes).decode()}"
-    session[f'nonce_{wallet_address.lower()}'] = nonce # Store nonce with lowercase address
-    logging.info(f"Generated nonce for address {wallet_address}: {nonce}")
-    return jsonify({'nonce': nonce})
-
-@app.route('/verify_signature', methods=['POST'])
-def verify_signature():
-    data = request.json
-    signed_message = data.get('signed_message')
-    original_nonce = data.get('original_nonce')
-    wallet_address = data.get('wallet_address')
-
-    if not all([signed_message, original_nonce, wallet_address]):
-        return jsonify({'success': False, 'error': 'Missing required parameters.'}), 400
-
-    stored_nonce_key = f'nonce_{wallet_address.lower()}'
-    stored_nonce = session.get(stored_nonce_key)
-
-    if not stored_nonce:
-        logging.warning(f"No nonce found in session for address {wallet_address}")
-        return jsonify({'success': False, 'error': 'Nonce not found in session or session expired.'}), 400
-
-    if original_nonce != stored_nonce:
-        logging.warning(f"Nonce mismatch for address {wallet_address}. Given: {original_nonce}, Stored: {stored_nonce}")
-        return jsonify({'success': False, 'error': 'Nonce mismatch. Possible replay attack.'}), 400
-
-    # Nonce verified, remove from session
-    session.pop(stored_nonce_key, None)
-
-    try:
-        # Use encode_defunct treating original_nonce as the text that was signed
-        signable_message = encode_defunct(text=original_nonce)
-        recovered_address = Account.recover_message(signable_message, signature=signed_message)
-
-        if recovered_address.lower() == wallet_address.lower():
-            user = User(id=wallet_address.lower()) # Use lowercase for consistency
-            login_user(user)
-            logging.info(f"Successfully verified signature for address {wallet_address}. User logged in.")
-            return jsonify({'success': True, 'message': 'Signature verified. User logged in.'})
-        else:
-            logging.warning(f"Signature verification failed for address {wallet_address}. Recovered: {recovered_address.lower()}")
-            return jsonify({'success': False, 'error': 'Signature verification failed.'}), 401
-    except Exception as e: # Catching broad exceptions, consider more specific ones like BadSignature
-        logging.error(f"Error during signature recovery for {wallet_address}: {str(e)}")
-        return jsonify({'success': False, 'error': f'Invalid signature or recovery failed: {str(e)}'}), 400
 
 @app.route('/logout')
 @login_required # Ensure user is logged in to log out
@@ -709,6 +719,34 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
     return render_template('login.html')
+
+
+@app.route('/basic_auth_login', methods=['POST'])
+def basic_auth_login():
+    auth = request.authorization
+    if not auth or not auth.username or not auth.password:
+        # Try to extract from header manually (for fetch API)
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Basic '):
+            import base64
+            try:
+                decoded = base64.b64decode(auth_header[6:]).decode('utf-8')
+                username, password = decoded.split(':', 1)
+            except Exception:
+                return jsonify({'success': False, 'error': 'Invalid auth header'}), 401
+        else:
+            return jsonify({'success': False, 'error': 'Missing credentials'}), 401
+    else:
+        username = auth.username
+        password = auth.password
+
+    # Replace this with your real user/password check
+    if username == 'testuser' and password == 'testpass':
+        user = User(id=username)
+        login_user(user)
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'error': 'Invalid login code or password'}), 401
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'

@@ -1,0 +1,57 @@
+<!-- Modal for FHIR Server Settings -->
+<div class="modal fade" id="fhirServerModal" tabindex="-1" aria-labelledby="fhirServerModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="fhirServerSettingsForm">
+        <div class="modal-header">
+          <h5 class="modal-title" id="fhirServerModalLabel">FHIR Server Settings</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="fhirServerUrlInput" class="form-label">FHIR Server URL</label>
+            <input type="text" class="form-control" id="fhirServerUrlInput" value="https://smile.sparked-fhir.com/aucore/fhir/DEFAULT">
+          </div>
+          <div class="mb-3">
+            <label for="fhirUsernameInput" class="form-label">FHIR Username</label>
+            <input type="text" class="form-control" id="fhirUsernameInput" autocomplete="username">
+          </div>
+          <div class="mb-3">
+            <label for="fhirPasswordInput" class="form-label">FHIR Password</label>
+            <input type="password" class="form-control" id="fhirPasswordInput" autocomplete="current-password">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Settings</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<script>
+// Save settings to localStorage and reload page or update JS variables
+document.getElementById('fhirServerSettingsForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  localStorage.setItem('fhirServerUrl', document.getElementById('fhirServerUrlInput').value);
+  localStorage.setItem('fhirUsername', document.getElementById('fhirUsernameInput').value);
+  localStorage.setItem('fhirPassword', document.getElementById('fhirPasswordInput').value);
+  // Optionally, reload or notify user
+  location.reload();
+});
+
+// On page load, populate fields from localStorage if available
+document.addEventListener('DOMContentLoaded', function() {
+  if (localStorage.getItem('fhirServerUrl')) {
+    document.getElementById('fhirServerUrlInput').value = localStorage.getItem('fhirServerUrl');
+  }
+  if (localStorage.getItem('fhirUsername')) {
+    document.getElementById('fhirUsernameInput').value = localStorage.getItem('fhirUsername');
+  }
+  if (localStorage.getItem('fhirPassword')) {
+    document.getElementById('fhirPasswordInput').value = localStorage.getItem('fhirPassword');
+  }
+});
+</script>

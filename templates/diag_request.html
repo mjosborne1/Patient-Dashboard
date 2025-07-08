@@ -1,0 +1,240 @@
+<!-- Diagnostic Request Modal -->
+<div class="modal fade" id="createDiagnosticRequestModal" tabindex="-1" aria-labelledby="createDiagnosticRequestLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="diagnosticRequestForm">
+        <div class="modal-header">
+          <h5 class="modal-title" id="createDiagnosticRequestLabel">Diagnostic Request</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Diagnostic Request Category Radio Buttons -->
+          <div class="mb-3">
+            <label class="form-label" id="requestCategoryLabel">Request Category</label>
+            <div role="radiogroup" aria-labelledby="requestCategoryLabel">
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="requestCategory" id="pathologyRequest" value="Pathology" required checked>
+                <label class="form-check-label" for="pathologyRequest">Pathology Request</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="requestCategory" id="radiologyRequest" value="Radiology" required>
+                <label class="form-check-label" for="radiologyRequest">Radiology Request</label>
+              </div>
+            </div>          
+          </div>
+          <div class="mb-3">
+            <label for="testName" class="form-label">Test Name</label>
+            <input 
+                type="search" 
+                class="form-control" 
+                id="testName" 
+                name="testName" 
+                placeholder="start typing the test name..." 
+                autocomplete="off"                
+                hx-get="/fhir/diagvalueset/expand"
+                hx-trigger="input changed delay:300ms, keyup[!event.shiftKey && event.key=='Tab'] from:#testName, change from:input[name='requestCategory']"
+                hx-target="#testNameList"
+                hx-include="closest form"
+                list="testNameList"
+            >
+            <datalist id="testNameList"></datalist>
+
+             <!-- Hidden field to store selected tests as tags -->
+            <input type="hidden" id="selectedTests" name="selectedTests">
+            <div id="selectedTestsDisplay" class="mt-2" required></div>
+          </div>
+          <!--Non-fasting/fasting default to non-fasting-->
+          <div class="mb-3 mt-3">
+          <label class="form-label" id="fastingLabel">Fasting Status</label>
+          <div role="radiogroup" aria-labelledby="fastingLabel">
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="fastingStatus" id="nonFasting" value="Non-fasting" checked>
+              <label class="form-check-label" for="nonFasting">Non-fasting</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="fastingStatus" id="fasting" value="Fasting">
+              <label class="form-check-label" for="fasting">Fasting</label>
+            </div>
+          </div>
+        <!-- Pregnancy status-->
+        <div class="mb-3 mt-3">
+          <div class="form-check-group">          
+            <label class="form-label" id="pregnantStatusLabel">Pregnant Status</label>
+            <div class="form-check" aria-labelledby="pregnantStatusLabel">
+              <input class="form-check-input" type="checkbox" id="pregnantStatus" name="isPregnant" value="true">
+              <label class="form-check-label" for="pregnantStatus">
+                Patient is pregnant
+              </label>
+            </div>
+          </div>
+        </div>
+        <!-- My Health Record consent withdrawal -->
+        <div class="mb-3 mt-3">
+          <div class="form-check-group"> 
+            <label class="form-label" id="mhrConsentLabel">My Health Record Upload Consent</label>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="mhrConsentWithdrawn" name="mhrConsentWithdrawn" value="true">
+              <label class="form-check-label" for="mhrConsentWithdrawn">
+                Do not upload results to My Health Record 
+              </label>
+            </div>
+          </div>
+        </div>
+        <!-- Billing category -->
+        <div class="mb-3 mt-3">
+          <label class="form-label" id="billingCategoryLabel">Billing Category</label>
+          <div role="radiogroup" aria-labelledby="billingCategoryLabel">
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="billingCategory" id="billingMedicare" value="Medicare" checked>
+              <label class="form-check-label" for="billingMedicare">Medicare</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="billingCategory" id="billingDVA" value="DVA">
+              <label class="form-check-label" for="billingDVA">DVA</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="billingCategory" id="billingPrivate" value="Private">
+              <label class="form-check-label" for="billingPrivate">Private</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="billingCategory" id="billingPrivateConcession" value="Private Concession">
+              <label class="form-check-label" for="billingPrivateConcession">Private Concession</label>
+            </div>
+          </div>
+        </div> 
+        <!-- Reason for request Searchbox-->
+        <div class="mb-3">
+            <label for="reason" class="form-label">Reason for Request</label>
+            <input 
+                type="search" 
+                class="form-control" 
+                id="reason" 
+                name="reason" 
+                placeholder="start typing the reason..." 
+                autocomplete="off"
+                hx-get="/fhir/reasonvalueset/expand"
+                hx-trigger="input changed delay:300ms, keyup[!event.shiftKey && event.key=='Tab'] from:#reason"
+                hx-target="#reasonList"
+                hx-include="closest form"
+                list="reasonList"
+            >
+            <datalist id="reasonList"></datalist>
+
+             <!-- Hidden field to store selected tests as tags -->
+            <input type="hidden" id="selectedReasons" name="selectedReasons">
+            <div id="selectedReasonsDisplay" class="mt-2" required></div>
+          </div> 
+        <!-- Clinical context --> 
+        </div>
+          <div class="mb-3 mt-3">
+            <label for="clinicalContext" class="form-label">Request Context (Clinical Notes)</label>
+            <textarea class="form-control" id="clinicalContext" name="clinicalContext" rows="3"></textarea>
+          </div>
+        </div>        
+        <!-- Submit Request bundle-->
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Submit Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.selectedTests = Array.isArray(window.selectedTests) ? window.selectedTests : [];
+
+function renderSelectedTests() {
+    const display = document.getElementById('selectedTestsDisplay');
+    const hidden = document.getElementById('selectedTests');
+    display.innerHTML = window.selectedTests.map((test, idx) =>
+        `<span class="badge bg-info text-dark me-1 mb-1">
+            ${test}
+            <button type="button" class="btn-close btn-close-white btn-sm ms-1" aria-label="Remove" onclick="removeTest(${idx})" style="font-size:0.7em; vertical-align:middle;"></button>
+        </span>`
+    ).join('');
+    hidden.value = JSON.stringify(window.selectedTests);
+}
+
+function addTestSelection() {
+    const input = document.getElementById('testName');
+    const value = input.value.trim();
+    if (value && Array.isArray(window.selectedTests) && !window.selectedTests.includes(value)) {
+        window.selectedTests.push(value);
+        renderSelectedTests();
+        input.value = '';
+    }
+}
+
+function removeTest(idx) {
+    if (Array.isArray(window.selectedTests)) {
+        window.selectedTests.splice(idx, 1);
+        renderSelectedTests();
+    }
+}
+
+// Add test on Enter, Tab, or when a datalist option is picked
+document.getElementById('testName').addEventListener('change', addTestSelection);
+document.getElementById('testName').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+        setTimeout(addTestSelection, 10);
+    }
+});
+
+// Clear testName and selectedTests when requestCategory changes
+document.querySelectorAll('input[name="requestCategory"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        document.getElementById('testName').value = '';
+        window.selectedTests = [];
+        renderSelectedTests();
+    });
+});
+
+// Blur close button on modal close to avoid aria-hidden accessibility warning
+document.querySelectorAll('.btn-close[data-bs-dismiss="modal"]').forEach(btn => {
+    btn.addEventListener('click', function() {
+        this.blur();
+    });
+});
+
+// Reason for Request
+window.selectedReasons = Array.isArray(window.selectedReasons) ? window.selectedReasons : [];
+
+function renderSelectedReasons() {
+    const display = document.getElementById('selectedReasonsDisplay');
+    const hidden = document.getElementById('selectedReasons');
+    display.innerHTML = window.selectedReasons.map((reason, idx) =>
+        `<span class="badge bg-secondary text-dark me-1 mb-1">
+            ${reason}
+            <button type="button" class="btn-close btn-close-white btn-sm ms-1" aria-label="Remove" onclick="removeReason(${idx})" style="font-size:0.7em; vertical-align:middle;"></button>
+        </span>`
+    ).join('');
+    hidden.value = JSON.stringify(window.selectedReasons);
+}
+
+function addReasonSelection() {
+    const input = document.getElementById('reason');
+    const value = input.value.trim();
+    if (value && Array.isArray(window.selectedReasons) && !window.selectedReasons.includes(value)) {
+        window.selectedReasons.push(value);
+        renderSelectedReasons();
+        input.value = '';
+    }
+}
+
+function removeReason(idx) {
+    if (Array.isArray(window.selectedReasons)) {
+        window.selectedReasons.splice(idx, 1);
+        renderSelectedReasons();
+    }
+}
+
+// Add reason on Enter, Tab, or when a datalist option is picked
+document.getElementById('reason').addEventListener('change', addReasonSelection);
+document.getElementById('reason').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+        setTimeout(addReasonSelection, 10);
+    }
+});
+</script>

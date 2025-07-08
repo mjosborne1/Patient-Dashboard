@@ -1,0 +1,52 @@
+<!-- Modal for Patient Summary JSON -->
+<div class="modal fade" id="patientSummaryModal" tabindex="-1" aria-labelledby="patientSummaryLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="patientSummaryForm">
+        <div class="modal-header">
+          <h5 class="modal-title" id="patientSummaryLabel">Patient Summary (JSON)</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <pre id="patientSummaryJson" style="white-space: pre-wrap; word-break: break-all;"></pre>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary">Copy to Clipboard</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+let summaryJsonData = null;
+
+// Listen for HTMX afterSwap on the hidden div
+document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target && evt.detail.target.id === "hiddenPatientSummaryJson") {
+        // Parse the JSON from the hidden div (assume server returns JSON as text)
+        try {
+            summaryJsonData = JSON.parse(evt.detail.target.textContent);
+            document.getElementById('patientSummaryJson').textContent = JSON.stringify(summaryJsonData, null, 2);
+        } catch (e) {
+            document.getElementById('patientSummaryJson').textContent = "Error loading summary.";
+            summaryJsonData = null;
+        }
+        // Only show the modal if not already open
+        const modalEl = document.getElementById('patientSummaryModal');
+        const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+        if (!modalEl.classList.contains('show')) {
+            modalInstance.show();
+        }
+    }
+});
+
+// Copy JSON to clipboard on form submit
+document.getElementById('patientSummaryForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    if (summaryJsonData) {
+        navigator.clipboard.writeText(JSON.stringify(summaryJsonData, null, 2));
+    }
+});
+</script>

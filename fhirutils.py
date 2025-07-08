@@ -9,6 +9,7 @@ def fhir_get(path, fhir_server_url=None, **kwargs):
     path: the endpoint path, e.g. '/Patient?_count=10'
     fhir_server_url: full base URL for AU Core, e.g. 'https://smile.sparked-fhir.com/aucore/fhir/DEFAULT'
     """
+    USE_AUTH = os.environ.get('USER_AUTH')
     FHIR_USERNAME = os.environ.get('FHIR_USERNAME')
     FHIR_PASSWORD = os.environ.get('FHIR_PASSWORD')
     auth = (FHIR_USERNAME, FHIR_PASSWORD) if FHIR_USERNAME and FHIR_PASSWORD else None
@@ -16,7 +17,13 @@ def fhir_get(path, fhir_server_url=None, **kwargs):
     url = ''
     if base_url:
         url = base_url.rstrip('/') + '/' + path.lstrip('/')
-    return requests.get(url, auth=auth, **kwargs)
+    
+    if USE_AUTH and auth != None:
+        print(f'Attempting get {url} using auth {auth}')
+        return requests.get(url, auth=auth, **kwargs)
+    else:
+        print(f'Attempting get {url} with no auth')
+        return requests.get(url, **kwargs)
 
 def format_fhir_date(date_str):
     """

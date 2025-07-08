@@ -103,6 +103,29 @@
                     </button>
                 </div>
             </div>
+            <div class="d-flex gap-2 mb-2">
+                <button 
+                    class="btn btn-outline-info"
+                    hx-get="/fhir/Patient/{{ patient.id }}/summary"
+                    hx-target="#jsonData"
+                    hx-trigger="click">
+                    Show Patient Summary
+                </button>
+                <button 
+                    class="btn btn-outline-success"
+                    data-bs-toggle="modal"
+                    data-bs-target="#createDiagnosticRequestModal">
+                    Create Diagnostic Request
+                </button>
+            </div>
+
+            <!-- Patient Summary and Service Request Bundle Output Form -->
+            <form id="jsonDataForm" class="mb-3">
+            <div class="mb-2">
+                <label for="jsonData" class="form-label fw-bold">Patient Summary / Diagnostic Request (JSON)</label>
+                <textarea id="jsonData" class="form-control" style="min-height:100px; background:#f8f9fa;" readonly></textarea>            </div>
+                <button type="submit" class="btn btn-primary">Copy to Clipboard</button>
+            </form>   
         </div>
     </div>
 </div>
@@ -256,7 +279,26 @@
     </div>
 </div>
 
+{% include "diag_request.html" %}
 
+<script>
+    // Copy JSON to clipboard on form submit
+    document.getElementById('jsonDataForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const jsonDataDiv = document.getElementById('jsonData');
+        if (jsonDataDiv) {
+            navigator.clipboard.writeText(jsonDataDiv.textContent);
+            console.log(jsonDataDiv.textContent);        
+        }
+    });
+    // Add server url header to HTMX requests
+    document.body.addEventListener('htmx:configRequest', function(evt) {
+    const fhirServerUrl = localStorage.getItem('fhir_server_url');
+    if (fhirServerUrl) {
+        evt.detail.headers['X-FHIR-Server-URL'] = fhirServerUrl;
+    }
+});
+</script>
 
 <style>
     .avatar-circle {

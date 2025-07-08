@@ -51,10 +51,10 @@ def auto_login():
         login_user(MockUser())
 
 def get_fhir_server_url():
-    # Prefer user-supplied, fallback to default
-    url = request.json.get('fhir_server_url') if request.is_json and request.json is not None else None
+    # Try to get from custom header (set by frontend from localStorage), fallback to default
+    url = request.headers.get('X-FHIR-Server-URL')
     if not url:
-        url = os.environ.get('FHIR_SERVER_URL', 'https://smile.sparked-fhir.com/aucore/fhir/DEFAULT')
+        url = os.environ.get('FHIR_SERVER_URL', 'https://aucore.aidbox.beda.software/fhir')
     return url
 
 @app.route('/')
@@ -221,6 +221,33 @@ def get_patient(patient_id):
         return render_template('patient_details.html', patient=patient)
     else:
         return jsonify({"error": "Failed to fetch patient details"}), 500
+
+
+@app.route('/fhir/Patient/<patient_id>/summary', methods=['GET'])
+def patient_summary(patient_id):
+    response = fhir_get(
+        f"/Patient/{patient_id}/$summary",
+        fhir_server_url=get_fhir_server_url(),
+        timeout=60
+    )
+    ### Testing get procedures e.g. irvine ronny lawrence 
+    ##response = fhir_get(f"/Procedure?subject={patient_id}", fhir_server_url=get_fhir_server_url(), timeout=10)
+    if response.status_code == 200:
+        data = response.json()       
+        return jsonify(data)
+    else:
+        data = response.json()
+        if data.get("resourceType") == "OperationOutcome":
+            # Return the OperationOutcome as an error with diagnostics if present
+            diagnostics = "; ".join(
+                issue.get("diagnostics", "") for issue in data.get("issue", [])
+            )
+            return jsonify({
+                "error": "OperationOutcome",
+                "details": diagnostics or "An error occurred during the $summary operation."
+            }), 400
+        return jsonify({'error': f'Failed to fetch summary: {response.status_code}'}), response.status_code
+    
 
 @app.route('/fhir/Procedures/<patient_id>')
 @login_required
@@ -590,6 +617,87 @@ def get_allergies(patient_id):
     allergies.sort(key=lambda x: x['date'], reverse=True)
     
     return render_template('allergies.html', allergies=allergies)
+
+@app.route('/fhir/diagvalueset/expand')
+def diag_valueset_expand():
+    """
+    Expands a ValueSet for Pathology or Radiology test names using a terminology server.
+    Query params:
+      - type: 'Pathology' or 'Radiology'
+      - q: search string
+    """
+    request_cat = request.args.get('requestCategory', '').lower()
+    query = request.args.get('testName', '').strip()
+    logging.info(f'Request Category:[{request_cat}] should be one of pathology, radiology')
+    logging.info(f'testName:[{query}]')
+    if not request_cat or not query or request_cat not in ['pathology', 'radiology']:
+        return render_template('partials/test_names.html', suggestions=[])
+    # Map test type to ValueSet URL (update these URLs to match your terminology server)
+    valueset_map = {
+        'pathology': 'http://pathologyrequest.example.com.au/ValueSet/boosted',   #  SNOMED Pathology Test ValueSet
+        'radiology': 'http://radiologyrequest.example.com.au/ValueSet/boosted',   #  SNOMED Radiology Test ValueSet
+    }
+    valueset_url = valueset_map[request_cat]
+
+    terminology_server = "https://r4.ontoserver.csiro.au/fhir" 
+    expand_url = f"{terminology_server}/ValueSet/$expand"
+    params = {
+        "url": valueset_url,
+        "filter": query,
+        "count": 10
+    }
+
+    try:
+        logging.info(f'{expand_url}?url={params.get("url")}&filter={params.get("filter")}&count={params.get("count")}')
+        resp = requests.get(expand_url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        #logging.info(data)
+        suggestions = []
+        contains = data.get("expansion", {}).get("contains", [])
+        for item in contains:
+            display = item.get("display") or item.get("code")
+            if display:
+                suggestions.append(display)
+        return render_template('partials/test_names.html', suggestions=suggestions)
+    except Exception as e:
+        print(e.with_traceback)
+        return render_template('partials/test_names.html', suggestions=[])
+
+@app.route('/fhir/reasonvalueset/expand')
+def reason_valueset_expand():
+    """
+    Expands a ValueSet for the Reason for Requesting Pathology or Radiology tests using a terminology server.
+    Query params:
+      - q: search string
+    """
+    query = request.args.get('reason', '').strip()
+
+    terminology_server = "https://r4.ontoserver.csiro.au/fhir" 
+    expand_url = f"{terminology_server}/ValueSet/$expand"
+    vs = "https://healthterminologies.gov.au/fhir/ValueSet/reason-for-request-1"
+    params = {
+        "url": vs,
+        "filter": query,
+        "count": 10
+    }
+    try:
+        #logging.info(f'{expand_url}?url={params.get("url")}&filter={params.get("filter")}&count={params.get("count")}')
+        resp = requests.get(expand_url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        #logging.info(data)
+        reasons = []
+        contains = data.get("expansion", {}).get("contains", [])
+        for item in contains:
+            display = item.get("display") or item.get("code")
+            if display:
+                reasons.append(display)
+        return render_template('partials/reasons.html', reasons=reasons)
+    except Exception as e:
+        print(e.with_traceback)
+        return render_template('partials/reasons.html', reasons=[])
+
 
 @app.route('/fhir/Demographics')
 @login_required

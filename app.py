@@ -636,8 +636,8 @@ def diag_valueset_expand():
     """
     request_cat = request.args.get('requestCategory', '').lower()
     query = request.args.get('testName', '').strip()
-    logging.info(f'Request Category:[{request_cat}] should be one of pathology, radiology')
-    logging.info(f'testName:[{query}]')
+    ###logging.info(f'Request Category:[{request_cat}] should be one of pathology, radiology')
+    ###logging.info(f'testName:[{query}]')
     if not request_cat or not query or request_cat not in ['pathology', 'radiology']:
         return render_template('partials/test_names.html', suggestions=[])
     # Map test type to ValueSet URL (update these URLs to match your terminology server)

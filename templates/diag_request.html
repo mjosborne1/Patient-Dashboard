@@ -2,7 +2,12 @@
 <div class="modal fade" id="createDiagnosticRequestModal" tabindex="-1" aria-labelledby="createDiagnosticRequestLabel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
-      <form id="diagnosticRequestForm">
+      <form id="diagnosticRequestForm"
+            hx-post="/fhir/diagnosticrequest/bundler"
+            hx-trigger="submit"
+            hx-target="#jsonData"
+            hx-swap="outerHTML"
+            hx-on="htmx:afterRequest: if (event.detail.successful) { document.getElementById('createDiagnosticRequestModal').classList.remove('show'); document.body.classList.remove('modal-open'); document.querySelector('.modal-backdrop').remove(); }">
         <div class="modal-header">
           <h5 class="modal-title" id="createDiagnosticRequestLabel">Diagnostic Request</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -41,7 +46,7 @@
 
              <!-- Hidden field to store selected tests as tags -->
             <input type="hidden" id="selectedTests" name="selectedTests">
-            <div id="selectedTestsDisplay" class="mt-2" required></div>
+            <div id="selectedTestsDisplay" class="mt-2"></div>
           </div>
           <!--Non-fasting/fasting default to non-fasting-->
           <div class="mb-3 mt-3">
@@ -122,7 +127,7 @@
 
              <!-- Hidden field to store selected tests as tags -->
             <input type="hidden" id="selectedReasons" name="selectedReasons">
-            <div id="selectedReasonsDisplay" class="mt-2" required></div>
+            <div id="selectedReasonsDisplay" class="mt-2"></div>
           </div> 
         <!-- Clinical context --> 
         </div>
@@ -237,4 +242,20 @@ document.getElementById('reason').addEventListener('keydown', function(e) {
         setTimeout(addReasonSelection, 10);
     }
 });
+
+// Reset selectedTests and selectedReasons when the modal is opened
+document.getElementById('createDiagnosticRequestModal').addEventListener('shown.bs.modal', function () {
+    // Clear selected tests
+    window.selectedTests = [];
+    renderSelectedTests();
+
+    // Clear selected reasons
+    window.selectedReasons = [];
+    renderSelectedReasons();
+
+    // Clear input fields
+    document.getElementById('testName').value = '';
+    document.getElementById('reason').value = '';
+});
+
 </script>

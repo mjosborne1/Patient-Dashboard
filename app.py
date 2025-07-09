@@ -1,5 +1,6 @@
 from flask import Flask, g, render_template, jsonify, request, session, redirect, url_for
 import requests
+import json
 import logging
 from flask_login import LoginManager, AnonymousUserMixin, UserMixin, login_user, logout_user, login_required, current_user
 from datetime import datetime
@@ -224,29 +225,20 @@ def get_patient(patient_id):
 
 
 @app.route('/fhir/Patient/<patient_id>/summary', methods=['GET'])
-def patient_summary(patient_id):
+def get_patient_summary(patient_id):
     response = fhir_get(
         f"/Patient/{patient_id}/$summary",
         fhir_server_url=get_fhir_server_url(),
         timeout=60
     )
-    ### Testing get procedures e.g. irvine ronny lawrence 
-    ##response = fhir_get(f"/Procedure?subject={patient_id}", fhir_server_url=get_fhir_server_url(), timeout=10)
     if response.status_code == 200:
-        data = response.json()       
-        return jsonify(data)
+        bundle = response.json()       
+        bundle_json = json.dumps(bundle, indent=2)
+        # Render the partial instead of returning raw JSON
+        return render_template('partials/json_textarea.html', bundle_json=bundle_json)
     else:
-        data = response.json()
-        if data.get("resourceType") == "OperationOutcome":
-            # Return the OperationOutcome as an error with diagnostics if present
-            diagnostics = "; ".join(
-                issue.get("diagnostics", "") for issue in data.get("issue", [])
-            )
-            return jsonify({
-                "error": "OperationOutcome",
-                "details": diagnostics or "An error occurred during the $summary operation."
-            }), 400
-        return jsonify({'error': f'Failed to fetch summary: {response.status_code}'}), response.status_code
+        error_message = {"error": "Failed to fetch patient summary"}
+        return render_template('partials/json_textarea.html', bundle_json=json.dumps(error_message, indent=2))
     
 
 @app.route('/fhir/Procedures/<patient_id>')
@@ -617,6 +609,22 @@ def get_allergies(patient_id):
     allergies.sort(key=lambda x: x['date'], reverse=True)
     
     return render_template('allergies.html', allergies=allergies)
+
+
+@app.route('/fhir/diagnosticrequest/bundler', methods=['POST'])
+def create_diagnostic_request_bundle():
+    form_data = request.form.to_dict()
+    logging.info(form_data)
+    with open('./json/service_request_bundle.json', 'r', encoding='utf-8') as f:
+        bundle = json.load(f)
+    
+    # Example: include selected tests and reasons
+    # bundle['selectedTests'] = form_data.get('selectedTests', [])
+    # bundle['selectedReasons'] = form_data.get('selectedReasons', [])
+    # Add more FHIR resources as needed
+    bundle_json = json.dumps(bundle, indent=2)
+    return render_template('partials/json_textarea.html', bundle_json=bundle_json)
+
 
 @app.route('/fhir/diagvalueset/expand')
 def diag_valueset_expand():

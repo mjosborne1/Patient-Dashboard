@@ -1,3 +1,5 @@
-{% for item in reasons %}
-<option value="{{ item }}"></option>
-{% endfor %}
+<datalist id="reasonList">
+  {% for item in reasons %}
+  <option value="{{ item }}"></option>
+  {% endfor %}
+</datalist>

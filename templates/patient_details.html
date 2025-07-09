@@ -104,11 +104,12 @@
                 </div>
             </div>
             <div class="d-flex gap-2 mb-2">
-                <button 
+                 <button 
                     class="btn btn-outline-info"
                     hx-get="/fhir/Patient/{{ patient.id }}/summary"
                     hx-target="#jsonData"
-                    hx-trigger="click">
+                    hx-trigger="click"
+                    hx-swap="outerHTML">
                     Show Patient Summary
                 </button>
                 <button 
@@ -298,6 +299,10 @@
         evt.detail.headers['X-FHIR-Server-URL'] = fhirServerUrl;
     }
 });
+function setJsonData(json) {
+    const textarea = document.getElementById('jsonData');
+    if (textarea) textarea.value = json;
+}
 </script>
 
 <style>

@@ -1,0 +1,31 @@
+{
+  "resourceType": "Parameters",
+  "parameter": [
+    {
+      "name": "valueSet",
+      "resource": {
+        "resourceType": "ValueSet",
+        "url": "5fba6b90-9713-43d1-8946-decd58005c72",
+        "compose": {
+          "include": [{
+            "valueSet": [
+              "https://www.rcpa.edu.au/fhir/ValueSet/spia-requesting-refset-3"
+            ],
+            "extension": [{
+              "url": "http://ontoserver.csiro.au/profiles/boost",
+              "valueDecimal": 10.0
+            }]
+          },{
+            "valueSet": [
+              "https://healthterminologies.gov.au/fhir/ValueSet/pathology-procedure-1"
+            ],
+            "extension": [{
+              "url": "http://ontoserver.csiro.au/profiles/boost",
+              "valueDecimal": 0.5
+            }]
+          }]
+        }
+      }
+    }
+  ]
+}

@@ -1,3 +1,5 @@
-{% for item in suggestions %}
-<option value="{{ item }}"></option>
-{% endfor %}
+<datalist id="testNameList">
+  {% for item in suggestions %}
+  <option value="{{ item }}"></option>
+  {% endfor %}
+</datalist>

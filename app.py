@@ -6,7 +6,7 @@ from flask_login import LoginManager, AnonymousUserMixin, UserMixin, login_user,
 from datetime import datetime
 import os  # Add os module for environment variables
 from fhirpathpy import evaluate
-from fhirutils import fhir_get, format_fhir_date
+from fhirutils import fhir_get, format_fhir_date, get_text_display, find_category
 
 
 app = Flask(__name__)
@@ -251,36 +251,12 @@ def get_procedures(patient_id):
         for proc in procedures:
             resource = proc['resource']
             performedDateTime = resource.get('performedDateTime', '')
-            if performedDateTime:
-                try:
-                    if 'T' in performedDateTime:
-                        formatted_date = datetime.strptime(performedDateTime[:19], '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%d')
-                    else:
-                        formatted_date = datetime.strptime(performedDateTime, '%Y-%m-%d').strftime('%Y-%m-%d')
-                except ValueError:
-                    formatted_date = performedDateTime
-                resource['performedDate'] = formatted_date
-            else:
-                resource['performedDate'] = ''
+            dt_performed = format_fhir_date(performedDateTime,"DT")
+            resource['performedDate'] = dt_performed
             # Get name of procedure
-            resource['procName'] = 'Unknown'
-            code = resource.get('code', {})
-            codings = code.get('coding', [])
-            for coding in codings:
-                if coding.get('system') == "http://snomed.info/sct":
-                    if coding.get('display'):
-                        resource['procName'] = coding.get('display')
-                    else:
-                        resource['procName'] = code.get('text', 'Unknown')
+            resource['procName'] = get_text_display(resource.get('code'))           
             # Get Reason for Procedure
-            resource['procReason'] = 'Unknown'
-            for reason in resource.get('reasonCode', []):
-                codings = reason.get('coding', [])
-                for coding in codings:
-                    if coding.get('display'):
-                        resource['procReason'] = coding.get('display')
-                    else:
-                        resource['procReason'] = reason.get('text', 'Unknown')
+            resource['procReason'] = get_text_display(resource.get('reasonCode', [{}])[0])
         return render_template('procedures.html', procedures=[proc['resource'] for proc in procedures])
     else:
         return "Procedures not found", 404
@@ -299,16 +275,7 @@ def get_immunizations(patient_id):
         for entry in immunisations:
             resource = entry.get('resource', {})
             # Vaccine display
-            vaccine_display = "Unknown"
-            vaccine_code = resource.get('vaccineCode', {})
-            codings = vaccine_code.get('coding', [])
-            # Try to get display from coding, else fallback to text
-            if codings and codings[0].get('display'):
-                vaccine_display = codings[0]['display']
-            elif vaccine_code.get('text'):
-                vaccine_display = vaccine_code['text']
-            else:
-                vaccine_display = "Unknown"
+            vaccine_display = get_text_display(resource.get('vaccineCode'))
             # Occurrence DateTime
             occurrence = resource.get('occurrenceDateTime', '')            
             dt_occurrence = format_fhir_date(occurrence)
@@ -330,29 +297,34 @@ def get_lab_results(patient_id):
     response = fhir_get(f"/Observation?patient={patient_id}&_sort=-date&_count=5", fhir_server_url=get_fhir_server_url(), timeout=10)
     if response.status_code == 200:
         lab_results = response.json().get('entry', [])
-         # Filter for laboratory category in Python
+        logging.info(f'Lab result count:{len(lab_results)}')
         filtered_lab_results = []
         for result in lab_results:
             resource = result.get('resource', {})
             categories = resource.get('category', [])
-            for cat in categories:
-                codings = cat.get('coding', [])
-                for coding in codings:
-                    if (
-                        coding.get('system') == "http://terminology.hl7.org/CodeSystem/observation-category"
-                        and coding.get('code') == "laboratory"
-                    ):
-                        filtered_lab_results.append(result)
-                        break  # Found laboratory, no need to check further
-                else:
-                    continue
-                break  # Break outer loop if found
-        # Prepare lab results for rendering
-        for result in filtered_lab_results:
-            effectiveDateTime = result['resource'].get('performedDateTime', '')
-            dt_observation = format_fhir_date(effectiveDateTime)
-            result['resource']['formattedDate'] = dt_observation 
-        # Render the results into HTML using the lab_results template
+            if not find_category(categories, "http://terminology.hl7.org/CodeSystem/observation-category", "laboratory"):
+                continue  # Skip non-lab observations
+
+            # Found a lab result
+            logging.info(f'Lab result found')
+            unit = ""
+            if 'valueQuantity' in resource:
+                value = resource['valueQuantity'].get('value')
+                unit = resource['valueQuantity'].get('unit', '')
+            elif 'valueCodeableConcept' in resource:
+                value = resource['valueCodeableConcept'].get('text')
+                if not value and resource['valueCodeableConcept'].get('coding'):
+                    value = resource['valueCodeableConcept']['coding'][0].get('display')
+            else:
+                value = resource.get('dataAbsentReason', {}).get('text', 'No result')
+            resource['display_value'] = value
+            resource['display_unit'] = unit
+
+            test_display = get_text_display(resource.get('code'))
+            resource['test_display'] = test_display 
+
+            resource['formattedDate'] = format_fhir_date(resource.get('effectiveDateTime', 'DT'))
+            filtered_lab_results.append(resource)
         return render_template('lab_results.html', lab_results=filtered_lab_results)
     else:
         return "Lab results not found", 404
@@ -385,7 +357,7 @@ def get_vital_signs(patient_id):
             
             # Extract the date
             effective_date = resource.get('effectiveDateTime', '')
-            dt_observation = format_fhir_date(effective_date)
+            dt_observation = format_fhir_date(effective_date,"DT")
                 
             # Extract components (systolic/diastolic)
             components = resource.get('component', [])
@@ -421,7 +393,7 @@ def get_vital_signs(patient_id):
             
             # Extract the date
             effective_date = resource.get('effectiveDateTime', '')
-            dt_observation = format_fhir_date(effective_date)           
+            dt_observation = format_fhir_date(effective_date,"DT")           
                 
             # Get heart rate value
             value_quantity = resource.get('valueQuantity', {})
@@ -449,7 +421,7 @@ def get_vital_signs(patient_id):
             
             # Extract the date
             effective_date = resource.get('effectiveDateTime', '')
-            dt_observation = format_fhir_date(effective_date)
+            dt_observation = format_fhir_date(effective_date,"DT")
                 
             # Get temperature value
             value_quantity = resource.get('valueQuantity', {})
@@ -470,7 +442,7 @@ def get_vital_signs(patient_id):
             
             # Extract the date
             effective_date = resource.get('effectiveDateTime', '')
-            dt_observation = format_fhir_date(effective_date)
+            dt_observation = format_fhir_date(effective_date,"DT")
                 
             # Get respiratory rate value
             value_quantity = resource.get('valueQuantity', {})
@@ -511,13 +483,9 @@ def get_medications(patient_id):
                 if resource.get('medicationReference'):
                     medication_name = resource['medicationReference'].get('display', 'Unknown Medication')
                 elif resource.get('medicationCodeableConcept'):
-                    coding = resource['medicationCodeableConcept'].get('coding', [{}])
-                    if coding:
-                        medication_name = coding[0].get('display', 'Unknown Medication')
-                    else:
-                        medication_name = resource['medicationCodeableConcept'].get('text', 'Unknown Medication')
-                
-                # Get dosage instructions
+                    medication_name = get_text_display(resource['medicationCodeableConcept'], default="Unknown Medication")
+                                
+                                # Get dosage instructions
                 dosage_instructions = []
                 if resource.get('dosageInstruction'):
                     for dosage in resource['dosageInstruction']:
@@ -563,13 +531,7 @@ def get_allergies(patient_id):
                 dt_recorded = format_fhir_date(recorded_date)               
                 
                 # Extract allergy code or display
-                allergy_name = "Unknown Allergen"
-                if resource.get('code'):
-                    coding = resource['code'].get('coding', [{}])
-                    if coding:
-                        allergy_name = coding[0].get('display', 'Unknown Allergen')
-                    else:
-                        allergy_name = resource['code'].get('text', 'Unknown Allergen')
+                allergy_name = get_text_display(resource.get('code'))                
                 
                 # Get reaction
                 reactions = []
@@ -577,11 +539,7 @@ def get_allergies(patient_id):
                     for reaction in resource['reaction']:
                         if reaction.get('manifestation'):
                             for manifestation in reaction['manifestation']:
-                                if manifestation.get('coding'):
-                                    reactions.append(manifestation['coding'][0].get('display', ''))
-                                elif manifestation.get('text'):
-                                    reactions.append(manifestation['text'])
-                
+                                reactions.append(get_text_display(manifestation))                
                 # Get status
                 clinical_status = "Unknown"
                 if resource.get('clinicalStatus'):

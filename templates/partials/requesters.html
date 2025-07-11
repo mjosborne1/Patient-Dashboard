@@ -1,0 +1,8 @@
+<select id="requesterList" name="requester" class="form-select">
+  <option value="">Select a requester...</option>
+  {% for requester in requesters %}
+    <option value="{{ requester.id }}">
+      {{ requester.name }}{% if requester.specialty %} ({{ requester.specialty }}){% endif %}
+    </option>
+  {% endfor %}
+</select>

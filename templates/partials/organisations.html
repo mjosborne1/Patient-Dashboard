@@ -1,0 +1,5 @@
+<datalist id="organisationList">
+  {% for org in organisations %}
+    <option value="{{ org.name }}" data-code="{{ org.id }}">{{ org.name }}</option>
+  {% endfor %}
+</datalist>

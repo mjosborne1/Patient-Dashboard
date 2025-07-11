@@ -291,13 +291,136 @@ def get_immunizations(patient_id):
     else:
         return "Immunisation not found", 404
 
+@app.route('/fhir/Requesters')
+@login_required
+def get_requesters():
+    """
+    Returns a list of PractitionerRoles with name, specialty, and PractitionerRole id for dropdown.
+    Only includes PractitionerRoles with a known value in the specialty element.
+    """
+    response = fhir_get("/PractitionerRole?_include=PractitionerRole:practitioner&_count=100", fhir_server_url=get_fhir_server_url(), timeout=10)
+    if response.status_code != 200:
+        return render_template('partials/requesters.html', requesters=[])
+
+    bundle = response.json()
+    entries = bundle.get('entry', [])
+    practitioners = {}
+    # Build a map of Practitioner id to name
+    for entry in entries:
+        resource = entry.get('resource', {})
+        if resource.get('resourceType') == 'Practitioner':
+            practitioner_id = resource.get('id')
+            # Get full name
+            name = resource.get('name', [{}])[0]
+            full_name = ' '.join(name.get('given', [])) + ' ' + name.get('family', '')
+            practitioners[practitioner_id] = full_name.strip()
+
+    requesters = []
+    for entry in entries:
+        resource = entry.get('resource', {})
+        if resource.get('resourceType') == 'PractitionerRole':
+            role_id = resource.get('id')
+            # Get practitioner name
+            practitioner_ref = resource.get('practitioner', {}).get('reference', '')
+            practitioner_id = practitioner_ref.split('/')[-1] if practitioner_ref else ''
+            name = practitioners.get(practitioner_id, 'Unknown')
+            # Get specialty display (first SNOMED if available)
+            specialty_display = ''
+            specialty_concepts = resource.get('specialty', [])
+            if specialty_concepts and isinstance(specialty_concepts, list):
+                for concept in specialty_concepts:
+                    for coding in concept.get('coding', []):
+                        if coding.get('system') == "http://snomed.info/sct" and coding.get('display'):
+                            specialty_display = coding['display']
+                            break
+                    if specialty_display:
+                        break
+            # Only add requester if specialty_display is valued (not empty)
+            if specialty_display:
+                requester = {
+                    "id": role_id,
+                    "name": name,
+                    "specialty": specialty_display
+                }
+                requesters.append(requester)
+
+    # Sort by name
+    requesters = sorted(requesters, key=lambda x: x["name"])
+    return render_template('partials/requesters.html', requesters=requesters)
+    
+    
+@app.route('/fhir/Specialties')
+@login_required
+def get_specialties():
+    """
+    Returns a list of unique SNOMED specialty displays and codes from PractitionerRole resources.
+    """
+    response = fhir_get("/PractitionerRole?_count=100", fhir_server_url=get_fhir_server_url(), timeout=10)
+    if response.status_code != 200:
+        return render_template('specialties.html', specialties=[])
+
+    bundle = response.json()
+    entries = bundle.get('entry', [])
+    specialties = {}
+
+    for entry in entries:
+        resource = entry.get('resource', {})
+        # Get all specialty CodeableConcepts
+        specialty_concepts = evaluate(resource, "specialty")
+        # Ensure specialty_concepts is iterable
+        if not isinstance(specialty_concepts, list):
+            specialty_concepts = [specialty_concepts]
+        for concept in specialty_concepts:
+            if isinstance(concept, dict):
+                for coding in concept.get("coding", []):
+                    if coding.get("system") == "http://snomed.info/sct" and coding.get("display") and coding.get("code"):
+                        # Use code as key to avoid duplicates, keep display and code
+                        specialties[coding["code"]] = {
+                            "display": coding["display"],
+                            "code": coding["code"]
+                        }
+
+    # Pass a list of dicts with display and code to the template
+    return render_template('partials/specialties.html', specialties=sorted(specialties.values(), key=lambda x: x["display"]))
+
+@app.route('/fhir/Provider/<org_type>')
+@login_required
+def get_organisation_by_type(org_type):
+    """
+    Returns a dropdown list of Organisations matching the given type code.
+    org_type: The code for the organisation type (e.g., "prov" for healthcare provider)
+    Uses SNOMED CT as the type system.
+    """
+    # Use SNOMED CT system for organisation type
+    system = request.args.get('system', 'http://snomed.info/sct')
+    # Search for organisations with the given type code and system
+    search_url = f"/Organization?type={system}|{org_type}&_count=20"
+    response = fhir_get(search_url, fhir_server_url=get_fhir_server_url(), timeout=10)
+    if response.status_code != 200:
+        return render_template('partials/organisations.html', organisations=[])
+
+    bundle = response.json()
+    entries = bundle.get('entry', [])
+    organisations = []
+    for entry in entries:
+        resource = entry.get('resource', {})
+        org_id = resource.get('id', '')
+        name = resource.get('name', 'Unknown')
+        organisations.append({
+            "id": org_id,
+            "name": name
+        })
+
+    # Render a partial dropdown list
+    return render_template('partials/organisations.html', organisations=sorted(organisations,  key=lambda x: x["name"]))
+
+
 @app.route('/fhir/LabResults/<patient_id>')
 @login_required
 def get_lab_results(patient_id):
-    response = fhir_get(f"/Observation?patient={patient_id}&_sort=-date&_count=5", fhir_server_url=get_fhir_server_url(), timeout=10)
+    response = fhir_get(f"/Observation?patient={patient_id}&_sort=-date", fhir_server_url=get_fhir_server_url(), timeout=10)
     if response.status_code == 200:
         lab_results = response.json().get('entry', [])
-        logging.info(f'Lab result count:{len(lab_results)}')
         filtered_lab_results = []
         for result in lab_results:
             resource = result.get('resource', {})
@@ -306,7 +429,6 @@ def get_lab_results(patient_id):
                 continue  # Skip non-lab observations
 
             # Found a lab result
-            logging.info(f'Lab result found')
             unit = ""
             if 'valueQuantity' in resource:
                 value = resource['valueQuantity'].get('value')
@@ -325,6 +447,7 @@ def get_lab_results(patient_id):
 
             resource['formattedDate'] = format_fhir_date(resource.get('effectiveDateTime', 'DT'))
             filtered_lab_results.append(resource)
+
         return render_template('lab_results.html', lab_results=filtered_lab_results)
     else:
         return "Lab results not found", 404
@@ -581,7 +704,7 @@ def create_diagnostic_request_bundle():
     # bundle['selectedReasons'] = form_data.get('selectedReasons', [])
     # Add more FHIR resources as needed
     bundle_json = json.dumps(bundle, indent=2)
-    return render_template('partials/json_textarea.html', bundle_json=bundle_json)
+    return render_template('partials/json_textarea.html', bundle_json=bundle_json), 200
 
 
 @app.route('/fhir/diagvalueset/expand')

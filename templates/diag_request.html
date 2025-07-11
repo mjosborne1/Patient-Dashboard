@@ -7,12 +7,25 @@
             hx-trigger="submit"
             hx-target="#jsonData"
             hx-swap="outerHTML"
-            hx-on="htmx:afterRequest: if (event.detail.successful) { document.getElementById('createDiagnosticRequestModal').classList.remove('show'); document.body.classList.remove('modal-open'); document.querySelector('.modal-backdrop').remove(); }">
+            hx-indicator="#jsonData-spinner"
+            hx-on="htmx:afterRequest: if (event.detail.successful) { closeDialog(); }">
         <div class="modal-header">
           <h5 class="modal-title" id="createDiagnosticRequestLabel">Diagnostic Request</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
+          <!-- Requester Dropdown -->
+          <div class="mb-3" id="requesterDropdownContainer">
+            <label for="requesterList" class="form-label">Select Requester</label>
+            <select class="form-select" id="requesterList" name="requester" required
+                    hx-get="/fhir/Requesters"
+                    hx-trigger="shown.bs.modal from:#createDiagnosticRequestModal"
+                    hx-target="#requesterList"
+                    hx-swap="outerHTML">
+              <option value="">Select a requester...</option>
+              <!-- Options will be loaded here by HTMX -->
+            </select>
+          </div>
           <!-- Diagnostic Request Category Radio Buttons -->
           <div class="mb-3">
             <label class="form-label" id="requestCategoryLabel">Request Category</label>
@@ -26,6 +39,14 @@
                 <label class="form-check-label" for="radiologyRequest">Radiology Request</label>
               </div>
             </div>          
+          </div>
+          <!-- Provider Organisation Dropdown (shown/updated based on Request Category) -->
+          <div class="mb-3" id="providerDropdownContainer">
+            <label for="organisationList" class="form-label">Select Provider Organisation</label>
+            <select class="form-select" id="organisationList" name="organisation">
+              <option value="">Select an provider...</option>
+              <!-- Options will be loaded here by HTMX -->
+            </select>
           </div>
           <div class="mb-3">
             <label for="testName" class="form-label">Test Name</label>
@@ -132,7 +153,7 @@
         <!-- Clinical context --> 
         </div>
           <div class="mb-3 mt-3">
-            <label for="clinicalContext" class="form-label">Request Context (Clinical Notes)</label>
+            <label for="clinicalContext" class="form-label">Clinical Context for Request</label>
             <textarea class="form-control" id="clinicalContext" name="clinicalContext" rows="3"></textarea>
           </div>
         </div>        
@@ -235,6 +256,36 @@ function removeReason(idx) {
     }
 }
 
+// Show and load provider organisations based on Request Category
+function updateProviderDropdown() {
+    const pathologyRadio = document.getElementById('pathologyRequest');
+    const radiologyRadio = document.getElementById('radiologyRequest');
+    const orgList = document.getElementById('organisationList');
+    let snomedCode = null;
+
+    if (pathologyRadio.checked) {
+        snomedCode = '310074003';
+    } else if (radiologyRadio.checked) {
+        snomedCode = '708175003';
+    }
+
+    if (snomedCode) {
+        // Load organisations for the selected SNOMED code
+        htmx.ajax('GET', `/fhir/Provider/${snomedCode}`, '#organisationList');
+    } else {
+        orgList.innerHTML = '<option value="">Select an provider...</option>';
+    }
+}
+
+// Attach event listeners to Request Category radios
+document.getElementById('pathologyRequest').addEventListener('change', updateProviderDropdown);
+document.getElementById('radiologyRequest').addEventListener('change', updateProviderDropdown);
+
+// Attach event listeners to requestingContext radios
+document.querySelectorAll('input[name="requestingContext"]').forEach(radio => {
+    radio.addEventListener('change', updateSpecialistDropdown);
+});
+
 // Add reason on Enter, Tab, or when a datalist option is picked
 document.getElementById('reason').addEventListener('change', addReasonSelection);
 document.getElementById('reason').addEventListener('keydown', function(e) {
@@ -245,7 +296,10 @@ document.getElementById('reason').addEventListener('keydown', function(e) {
 
 // Reset selectedTests and selectedReasons when the modal is opened
 document.getElementById('createDiagnosticRequestModal').addEventListener('shown.bs.modal', function () {
-    // Clear selected tests
+  // initialise Provider list
+    updateProviderDropdown(); 
+
+  // Clear selected tests
     window.selectedTests = [];
     renderSelectedTests();
 
@@ -258,4 +312,10 @@ document.getElementById('createDiagnosticRequestModal').addEventListener('shown.
     document.getElementById('reason').value = '';
 });
 
+function closeDialog() {
+    let modalEl = document.getElementById('createDiagnosticRequestModal');
+    let modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    modalInstance.hide();
+    console.log('modal should be hidden now...')
+}
 </script>

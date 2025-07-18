@@ -1,9 +1,20 @@
 <!-- Diagnostic Request Modal -->
-<div class="modal fade" id="createDiagnosticRequestModal" tabindex="-1" aria-labelledby="createDiagnosticRequestLabel" aria-hidden="true">
-  <div class="modal-dialog">
+<div class="modal fade" id="createDiagnosticRequestModal" tabindex="-1" aria-labelledby="createDiagnosticRequestLabel" aria-hidd        <!-- Copy To (Recipients) -->
+        <div class="mb-3">
+            <label for="copyTo" class="form-label">Copy Results To</label>
+            <select class="form-select" id="copyToList" name="copyTo" multiple
+                    hx-get="/fhir/CopyToPractitioners"
+                    hx-trigger="shown.bs.modal from:#createDiagnosticRequestModal"
+                    hx-target="#copyToList"
+                    hx-swap="outerHTML">
+              <option value="">Select practitioners to copy results to...</option>
+              <!-- Options will be loaded here by HTMX -->
+            </select>
+            <div class="form-text">Hold Ctrl (or Cmd on Mac) to select multiple practitioners</div>
+        </div><div class="modal-dialog">
     <div class="modal-content">
       <form id="diagnosticRequestForm"
-            hx-post="/fhir/diagnosticrequest/bundler"
+            hx-post="/fhir/diagnosticrequest/bundler/{{ patient.id }}" 
             hx-trigger="submit"
             hx-target="#jsonData"
             hx-swap="outerHTML"
@@ -26,6 +37,8 @@
               <!-- Options will be loaded here by HTMX -->
             </select>
           </div>
+          <!-- get patient id from the session -->
+          <input type="hidden" name="patient_id" value="{{ session.current_patient_id }}">    
           <!-- Diagnostic Request Category Radio Buttons -->
           <div class="mb-3">
             <label class="form-label" id="requestCategoryLabel">Request Category</label>
@@ -111,20 +124,28 @@
           <label class="form-label" id="billingCategoryLabel">Billing Category</label>
           <div role="radiogroup" aria-labelledby="billingCategoryLabel">
             <div class="form-check form-check-inline">
-              <input class="form-check-input" type="radio" name="billingCategory" id="billingMedicare" value="Medicare" checked>
+              <input class="form-check-input" type="radio" name="billingCategory" id="billingMedicare" value="PUBLICPOL" checked>
               <label class="form-check-label" for="billingMedicare">Medicare</label>
             </div>
             <div class="form-check form-check-inline">
-              <input class="form-check-input" type="radio" name="billingCategory" id="billingDVA" value="DVA">
+              <input class="form-check-input" type="radio" name="billingCategory" id="billingDVA" value="VET">
               <label class="form-check-label" for="billingDVA">DVA</label>
             </div>
             <div class="form-check form-check-inline">
-              <input class="form-check-input" type="radio" name="billingCategory" id="billingPrivate" value="Private">
+              <input class="form-check-input" type="radio" name="billingCategory" id="billingPrivate" value="pay">
               <label class="form-check-label" for="billingPrivate">Private</label>
             </div>
             <div class="form-check form-check-inline">
-              <input class="form-check-input" type="radio" name="billingCategory" id="billingPrivateConcession" value="Private Concession">
+              <input class="form-check-input" type="radio" name="billingCategory" id="billingPrivateConcession" value="payconc">
               <label class="form-check-label" for="billingPrivateConcession">Private Concession</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="billingCategory" id="billingPublicHospital" value="AUPUBHOSP">
+              <label class="form-check-label" for="billingMedicare">Public Hospital</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="billingCategory" id="billingWorkcover" value="WCBPOL">
+              <label class="form-check-label" for="billingWorkcover">Workcover</label>
             </div>
           </div>
         </div> 
@@ -150,17 +171,51 @@
             <input type="hidden" id="selectedReasons" name="selectedReasons">
             <div id="selectedReasonsDisplay" class="mt-2"></div>
           </div> 
+        <!-- Copy To (Recipients) -->
+        <div class="mb-3">
+            <label for="copyToPractitioner" class="form-label">Copy Results To</label>
+            <input 
+                type="search" 
+                class="form-control" 
+                id="copyToPractitioner" 
+                name="copyToPractitioner" 
+                placeholder="start typing practitioner name..." 
+                autocomplete="off"
+                hx-get="/fhir/CopyToPractitioners"
+                hx-trigger="input changed delay:300ms, keyup[!event.shiftKey && event.key=='Tab'] from:#copyToPractitioner"
+                hx-target="#copyToPractitionerList"
+                hx-include="closest form"
+                list="copyToPractitionerList"
+            >
+            <datalist id="copyToPractitionerList"></datalist>
+
+             <!-- Hidden field to store selected practitioners as array -->
+            <input type="hidden" id="copyTo" name="copyTo">
+            <div id="copyToPractitionersDisplay" class="mt-2"></div>
+        </div>
         <!-- Clinical context --> 
         </div>
           <div class="mb-3 mt-3">
             <label for="clinicalContext" class="form-label">Clinical Context for Request</label>
             <textarea class="form-control" id="clinicalContext" name="clinicalContext" rows="3"></textarea>
           </div>
-        </div>        
+          
+          <!-- Add narrative toggle -->
+          <div class="mb-3 mt-3">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" role="switch" id="addNarrative" name="addNarrative" value="true">
+              <label class="form-check-label" for="addNarrative">
+                Add narrative text to all resources in the bundle
+              </label>
+            </div>            
+          </div>
+        </div>  
+        <!-- Add narative slider--> 
+
         <!-- Submit Request bundle-->
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Submit Request</button>
+          <button type="submit" class="btn btn-primary" onclick="setTimeout(closeDialog, 100)">Submit Request</button>
         </div>
       </form>
     </div>
@@ -176,7 +231,7 @@ function renderSelectedTests() {
     const hidden = document.getElementById('selectedTests');
     display.innerHTML = window.selectedTests.map((test, idx) =>
         `<span class="badge bg-info text-dark me-1 mb-1">
-            ${test}
+            ${typeof test === 'string' ? test : test.display}
             <button type="button" class="btn-close btn-close-white btn-sm ms-1" aria-label="Remove" onclick="removeTest(${idx})" style="font-size:0.7em; vertical-align:middle;"></button>
         </span>`
     ).join('');
@@ -186,16 +241,47 @@ function renderSelectedTests() {
 function addTestSelection() {
     const input = document.getElementById('testName');
     const value = input.value.trim();
-    if (value && Array.isArray(window.selectedTests) && !window.selectedTests.includes(value)) {
-        window.selectedTests.push(value);
-        renderSelectedTests();
-        input.value = '';
+    if (value && Array.isArray(window.selectedTests)) {
+        // Check if we already have this test (by display name)
+        const existingTest = window.selectedTests.find(test => 
+            (typeof test === 'string' ? test : test.display) === value
+        );
+        
+        if (!existingTest) {
+            // Try to find the corresponding option in the datalist to get the code
+            const datalist = document.getElementById('testNameList');
+            const options = datalist.querySelectorAll('option');
+            let testCode = '';
+            
+            for (let option of options) {
+                if (option.value === value) {
+                    testCode = option.getAttribute('data-code') || '';
+                    break;
+                }
+            }
+            
+            // Store as object with code, display, and display_sequence
+            // The sequence is 1-indexed based on the order of addition
+            window.selectedTests.push({
+                code: testCode,
+                display: value,
+                display_sequence: window.selectedTests.length + 1
+            });
+            renderSelectedTests();
+            input.value = '';
+        }
     }
 }
 
 function removeTest(idx) {
     if (Array.isArray(window.selectedTests)) {
         window.selectedTests.splice(idx, 1);
+        // Recalculate display_sequence for remaining tests to maintain consecutive numbering
+        window.selectedTests.forEach((test, index) => {
+            if (typeof test === 'object') {
+                test.display_sequence = index + 1;
+            }
+        });
         renderSelectedTests();
     }
 }
@@ -232,7 +318,7 @@ function renderSelectedReasons() {
     const hidden = document.getElementById('selectedReasons');
     display.innerHTML = window.selectedReasons.map((reason, idx) =>
         `<span class="badge bg-secondary text-dark me-1 mb-1">
-            ${reason}
+            ${typeof reason === 'string' ? reason : reason.display}
             <button type="button" class="btn-close btn-close-white btn-sm ms-1" aria-label="Remove" onclick="removeReason(${idx})" style="font-size:0.7em; vertical-align:middle;"></button>
         </span>`
     ).join('');
@@ -242,10 +328,33 @@ function renderSelectedReasons() {
 function addReasonSelection() {
     const input = document.getElementById('reason');
     const value = input.value.trim();
-    if (value && Array.isArray(window.selectedReasons) && !window.selectedReasons.includes(value)) {
-        window.selectedReasons.push(value);
-        renderSelectedReasons();
-        input.value = '';
+    if (value && Array.isArray(window.selectedReasons)) {
+        // Check if we already have this reason (by display name)
+        const existingReason = window.selectedReasons.find(reason => 
+            (typeof reason === 'string' ? reason : reason.display) === value
+        );
+        
+        if (!existingReason) {
+            // Try to find the corresponding option in the datalist to get the code
+            const datalist = document.getElementById('reasonList');
+            const options = datalist.querySelectorAll('option');
+            let reasonCode = '';
+            
+            for (let option of options) {
+                if (option.value === value) {
+                    reasonCode = option.getAttribute('data-code') || '';
+                    break;
+                }
+            }
+            
+            // Store as object with code and display
+            window.selectedReasons.push({
+                code: reasonCode,
+                display: value
+            });
+            renderSelectedReasons();
+            input.value = '';
+        }
     }
 }
 
@@ -253,6 +362,65 @@ function removeReason(idx) {
     if (Array.isArray(window.selectedReasons)) {
         window.selectedReasons.splice(idx, 1);
         renderSelectedReasons();
+    }
+}
+
+// Copy To Practitioners
+window.selectedCopyToPractitioners = Array.isArray(window.selectedCopyToPractitioners) ? window.selectedCopyToPractitioners : [];
+
+function renderSelectedCopyToPractitioners() {
+    const display = document.getElementById('copyToPractitionersDisplay');
+    const hidden = document.getElementById('copyTo');
+    display.innerHTML = window.selectedCopyToPractitioners.map((practitioner, idx) =>
+        `<span class="badge bg-warning text-dark me-1 mb-1">
+            ${typeof practitioner === 'string' ? practitioner : practitioner.display}
+            <button type="button" class="btn-close btn-close-white btn-sm ms-1" aria-label="Remove" onclick="removeCopyToPractitioner(${idx})" style="font-size:0.7em; vertical-align:middle;"></button>
+        </span>`
+    ).join('');
+    // Store only the IDs in the hidden field for form submission
+    const practitionerIds = window.selectedCopyToPractitioners.map(practitioner => 
+        typeof practitioner === 'string' ? practitioner : practitioner.id
+    );
+    hidden.value = JSON.stringify(practitionerIds);
+}
+
+function addCopyToPractitionerSelection() {
+    const input = document.getElementById('copyToPractitioner');
+    const value = input.value.trim();
+    if (value && Array.isArray(window.selectedCopyToPractitioners)) {
+        // Check if we already have this practitioner (by display name)
+        const existingPractitioner = window.selectedCopyToPractitioners.find(practitioner => 
+            (typeof practitioner === 'string' ? practitioner : practitioner.display) === value
+        );
+        
+        if (!existingPractitioner) {
+            // Try to find the corresponding option in the datalist to get the ID
+            const datalist = document.getElementById('copyToPractitionerList');
+            const options = datalist.querySelectorAll('option');
+            let practitionerId = '';
+            
+            for (let option of options) {
+                if (option.value === value) {
+                    practitionerId = option.getAttribute('data-code') || '';
+                    break;
+                }
+            }
+            
+            // Store as object with id and display
+            window.selectedCopyToPractitioners.push({
+                id: practitionerId,
+                display: value
+            });
+            renderSelectedCopyToPractitioners();
+            input.value = '';
+        }
+    }
+}
+
+function removeCopyToPractitioner(idx) {
+    if (Array.isArray(window.selectedCopyToPractitioners)) {
+        window.selectedCopyToPractitioners.splice(idx, 1);
+        renderSelectedCopyToPractitioners();
     }
 }
 
@@ -271,7 +439,7 @@ function updateProviderDropdown() {
 
     if (snomedCode) {
         // Load organisations for the selected SNOMED code
-        htmx.ajax('GET', `/fhir/Provider/${snomedCode}`, '#organisationList');
+        htmx.ajax('GET', `/fhir/Provider/${snomedCode}`, '#providerDropdownContainer');
     } else {
         orgList.innerHTML = '<option value="">Select an provider...</option>';
     }
@@ -294,6 +462,14 @@ document.getElementById('reason').addEventListener('keydown', function(e) {
     }
 });
 
+// Add copyTo practitioner on Enter, Tab, or when a datalist option is picked
+document.getElementById('copyToPractitioner').addEventListener('change', addCopyToPractitionerSelection);
+document.getElementById('copyToPractitioner').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+        setTimeout(addCopyToPractitionerSelection, 10);
+    }
+});
+
 // Reset selectedTests and selectedReasons when the modal is opened
 document.getElementById('createDiagnosticRequestModal').addEventListener('shown.bs.modal', function () {
   // initialise Provider list
@@ -307,9 +483,14 @@ document.getElementById('createDiagnosticRequestModal').addEventListener('shown.
     window.selectedReasons = [];
     renderSelectedReasons();
 
+    // Clear selected copyTo practitioners
+    window.selectedCopyToPractitioners = [];
+    renderSelectedCopyToPractitioners();
+
     // Clear input fields
     document.getElementById('testName').value = '';
     document.getElementById('reason').value = '';
+    document.getElementById('copyToPractitioner').value = '';
 });
 
 function closeDialog() {

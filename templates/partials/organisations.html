@@ -1,5 +1,9 @@
-<datalist id="organisationList">
-  {% for org in organisations %}
-    <option value="{{ org.name }}" data-code="{{ org.id }}">{{ org.name }}</option>
-  {% endfor %}
-</datalist>
+<div class="mb-3" id="providerDropdownContainer">
+  <label for="organisationList" class="form-label">Select Provider Organisation</label>
+  <select class="form-select" id="organisationList" name="organisation">
+    <option value="">Select a provider...</option>
+    {% for org in organisations %}
+      <option value="{{ org.id }}">{{ org.name }}</option>
+    {% endfor %}
+  </select>
+</div>

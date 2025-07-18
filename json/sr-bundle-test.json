@@ -1,0 +1,416 @@
+{
+  "resourceType": "Bundle",
+  "id": "82070008-e349-4ecd-96db-b46ce9a2d6b9",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:103d0f57-5f65-45a2-9f59-c15c116728a5",
+      "request": {
+        "method": "GET",
+        "url": "PractitionerRole/generalpractitioner-guthrie-aaron"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:e9e104ba-8708-4acf-933f-400cdc3c27cf",
+      "request": {
+        "method": "GET",
+        "url": "Organization/bayview-pathology"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:795848f0-ee44-4757-81dc-3303608c0baf",
+      "resource": {
+        "resourceType": "Encounter",
+        "meta": {
+          "profile": [
+            "http://hl7.org.au/fhir/core/StructureDefinition/au-core-encounter"
+          ]
+        },
+        "id": "795848f0-ee44-4757-81dc-3303608c0baf",
+        "status": "planned",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "Patient/banks-jamila-angie"
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><h3>Encounter</h3><p><strong>Status:</strong> planned</p><p><strong>Class:</strong> ambulatory</p></div>"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "Encounter"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:a32e5b44-6f15-4f74-a608-e190a48b4751",
+      "resource": {
+        "resourceType": "ServiceRequest",
+        "meta": {
+          "profile": [
+            "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-servicerequest-path"
+          ]
+        },
+        "extension": [
+          {
+            "url": "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-displaysequence",
+            "valueInteger": 1
+          }
+        ],
+        "id": "a32e5b44-6f15-4f74-a608-e190a48b4751",
+        "status": "active",
+        "intent": "order",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "721963009",
+                "display": "Pathology"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "26604007",
+              "display": "Full blood count"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/banks-jamila-angie"
+        },
+        "encounter": {
+          "reference": "Encounter/795848f0-ee44-4757-81dc-3303608c0baf"
+        },
+        "authoredOn": "2025-07-18T06:48:53.260694+10:00",
+        "requester": {
+          "reference": "PractitionerRole/generalpractitioner-guthrie-aaron"
+        },
+        "performer": [
+          {
+            "reference": "Organization/bayview-pathology"
+          }
+        ],
+        "reasonCode": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "225885004",
+                "display": "Health assessment"
+              }
+            ]
+          }
+        ],
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><h3>ServiceRequest</h3><p><strong>Status:</strong> active</p><p><strong>Intent:</strong> order</p><p><strong>Test:</strong> Full blood count</p><p><strong>Category:</strong> Pathology</p><p><strong>Sequence:</strong> 1</p><p><strong>Reasons:</strong> Health assessment</p></div>"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "ServiceRequest"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:3521a3b5-be04-4e7a-b219-52f8856af0e4",
+      "resource": {
+        "resourceType": "Task",
+        "meta": {
+          "profile": [
+            "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-task-diagnosticrequest"
+          ],
+          "tag": [
+            {
+              "system": "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-tag",
+              "code": "fulfilment-task"
+            }
+          ]
+        },
+        "id": "3521a3b5-be04-4e7a-b219-52f8856af0e4",
+        "status": "requested",
+        "intent": "order",
+        "focus": {
+          "reference": "ServiceRequest/a32e5b44-6f15-4f74-a608-e190a48b4751"
+        },
+        "for": {
+          "reference": "Patient/banks-jamila-angie"
+        },
+        "authoredOn": "2025-07-18T06:48:53.260729+10:00",
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><h3>Task</h3><p><strong>Status:</strong> requested</p><p><strong>Intent:</strong> order</p></div>"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "Task"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:16784666-fa28-459b-a2e3-9f77492f4c4d",
+      "resource": {
+        "resourceType": "ServiceRequest",
+        "meta": {
+          "profile": [
+            "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-servicerequest-path"
+          ]
+        },
+        "extension": [
+          {
+            "url": "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-displaysequence",
+            "valueInteger": 2
+          }
+        ],
+        "id": "16784666-fa28-459b-a2e3-9f77492f4c4d",
+        "status": "active",
+        "intent": "order",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "721963009",
+                "display": "Pathology"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "26958001",
+              "display": "Liver function test"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/banks-jamila-angie"
+        },
+        "encounter": {
+          "reference": "Encounter/795848f0-ee44-4757-81dc-3303608c0baf"
+        },
+        "authoredOn": "2025-07-18T06:48:53.260761+10:00",
+        "requester": {
+          "reference": "PractitionerRole/generalpractitioner-guthrie-aaron"
+        },
+        "performer": [
+          {
+            "reference": "Organization/bayview-pathology"
+          }
+        ],
+        "reasonCode": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "225885004",
+                "display": "Health assessment"
+              }
+            ]
+          }
+        ],
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><h3>ServiceRequest</h3><p><strong>Status:</strong> active</p><p><strong>Intent:</strong> order</p><p><strong>Test:</strong> Liver function test</p><p><strong>Category:</strong> Pathology</p><p><strong>Sequence:</strong> 2</p><p><strong>Reasons:</strong> Health assessment</p></div>"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "ServiceRequest"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:7e82c91b-0e58-412e-ba7d-ddb5a5d985a7",
+      "resource": {
+        "resourceType": "Task",
+        "meta": {
+          "profile": [
+            "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-task-diagnosticrequest"
+          ],
+          "tag": [
+            {
+              "system": "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-tag",
+              "code": "fulfilment-task"
+            }
+          ]
+        },
+        "id": "7e82c91b-0e58-412e-ba7d-ddb5a5d985a7",
+        "status": "requested",
+        "intent": "order",
+        "focus": {
+          "reference": "ServiceRequest/16784666-fa28-459b-a2e3-9f77492f4c4d"
+        },
+        "for": {
+          "reference": "Patient/banks-jamila-angie"
+        },
+        "authoredOn": "2025-07-18T06:48:53.260785+10:00",
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><h3>Task</h3><p><strong>Status:</strong> requested</p><p><strong>Intent:</strong> order</p></div>"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "Task"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:16cf6795-3a6d-439e-ad2c-3c680d91d420",
+      "resource": {
+        "resourceType": "Task",
+        "meta": {
+          "profile": [
+            "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-task-group"
+          ],
+          "tag": [
+            {
+              "system": "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-tag",
+              "code": "fulfilment-task-group"
+            }
+          ]
+        },
+        "id": "16cf6795-3a6d-439e-ad2c-3c680d91d420",
+        "status": "requested",
+        "intent": "order",
+        "description": "Pathology Order Group",
+        "for": {
+          "reference": "Patient/banks-jamila-angie"
+        },
+        "authoredOn": "2025-07-18T06:48:53.260803+10:00",
+        "partOf": [
+          {
+            "reference": "ServiceRequest/a32e5b44-6f15-4f74-a608-e190a48b4751"
+          },
+          {
+            "reference": "ServiceRequest/16784666-fa28-459b-a2e3-9f77492f4c4d"
+          }
+        ],
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><h3>Task</h3><p><strong>Status:</strong> requested</p><p><strong>Intent:</strong> order</p><p><strong>Description:</strong> Pathology Order Group</p></div>"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "Task"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:42907ba0-5b0d-46c9-8bbc-26c4fbf1e50c",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "42907ba0-5b0d-46c9-8bbc-26c4fbf1e50c",
+        "status": "current",
+        "type": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "34109-9",
+              "display": "Note"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/banks-jamila-angie"
+        },
+        "date": "2025-07-18T06:48:53.260837+10:00",
+        "content": [
+          {
+            "attachment": {
+              "contentType": "text/plain",
+              "data": "ZGFzIERGREYgc2ZkIHMgYWZkcw==",
+              "title": "Clinical Context"
+            }
+          }
+        ],
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><h3>DocumentReference</h3><p><strong>Status:</strong> current</p><p><strong>Type:</strong> Note</p><p><strong>Title:</strong> Clinical Context</p><p><strong>Content Type:</strong> text/plain</p></div>"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "DocumentReference"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:f1737ec9-53d5-4548-8113-fbdb858be218",
+      "resource": {
+        "resourceType": "CommunicationRequest",
+        "meta": {
+          "profile": [
+            "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-communicationrequest-copyto"
+          ]
+        },
+        "id": "f1737ec9-53d5-4548-8113-fbdb858be218",
+        "status": "active",
+        "subject": {
+          "reference": "Patient/banks-jamila-angie"
+        },
+        "about": {
+          "reference": "Encounter/795848f0-ee44-4757-81dc-3303608c0baf"
+        },
+        "recipient": [
+          {
+            "reference": "PractitionerRole/dentalpractitioner-quinn-aisha"
+          }
+        ],
+        "authoredOn": "2025-07-18T06:48:53.260865+10:00",
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><h3>CommunicationRequest</h3><p><strong>Status:</strong> active</p><p>Request for communication regarding patient care.</p></div>"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "CommunicationRequest"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:2b325a13-46a5-40f1-bf0b-cc87596c3357",
+      "request": {
+        "method": "GET",
+        "url": "PractitionerRole/dentalpractitioner-quinn-aisha"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:98c049e9-9fd5-4224-a9bd-ab5880da875c",
+      "resource": {
+        "resourceType": "Coverage",
+        "meta": {
+          "profile": [
+            "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-coverage"
+          ]
+        },
+        "id": "98c049e9-9fd5-4224-a9bd-ab5880da875c",
+        "status": "active",
+        "type": {
+          "coding": [
+            {
+              "code": "PUBLICPOL"
+            }
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><h3>Coverage</h3><p><strong>Status:</strong> active</p><p><strong>Type:</strong> PUBLICPOL</p></div>"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "Coverage"
+      }
+    }
+  ],
+  "timestamp": "2025-07-18T06:48:53.260368+10:00"
+}

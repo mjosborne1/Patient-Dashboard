@@ -79,3 +79,22 @@ def find_category(categories, system, code):
             if coding.get('system') == system and coding.get('code') == code:
                 return True
     return False
+
+
+def get_form_data(request):
+    """
+    Utility function to process and log form data from a Flask request.
+    Handles both single and multi-valued form fields.
+    
+    Args:
+        request: The Flask request object
+        
+    Returns:
+        dict: Processed form data with single values unwrapped
+    """
+    form_data = {}
+    for key in request.form:
+        values = request.form.getlist(key)
+        form_data[key] = values if len(values) > 1 else values[0]
+    
+    return form_data

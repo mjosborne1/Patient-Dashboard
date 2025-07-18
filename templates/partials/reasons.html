@@ -1,5 +1,5 @@
 <datalist id="reasonList">
-  {% for item in reasons %}
-  <option value="{{ item }}"></option>
+  {% for reason in reasons %}
+  <option value="{{ reason.display }}" data-code="{{ reason.code }}"></option>
   {% endfor %}
 </datalist>

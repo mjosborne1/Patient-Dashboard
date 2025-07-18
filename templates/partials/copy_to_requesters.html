@@ -1,0 +1,8 @@
+<select class="form-select" id="copyToList" name="copyTo" multiple>
+  <option value="">Select practitioners to copy results to...</option>
+  {% for requester in requesters %}
+    <option value="{{ requester.id }}">
+      {{ requester.name }}{% if requester.specialty %} ({{ requester.specialty }}){% endif %}
+    </option>
+  {% endfor %}
+</select>

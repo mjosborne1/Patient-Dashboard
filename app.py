@@ -6,7 +6,8 @@ from flask_login import LoginManager, AnonymousUserMixin, UserMixin, login_user,
 from datetime import datetime
 import os  # Add os module for environment variables
 from fhirpathpy import evaluate
-from fhirutils import fhir_get, format_fhir_date, get_text_display, find_category
+from fhirutils import fhir_get, format_fhir_date, get_text_display, find_category, get_form_data
+from bundler import create_request_bundle
 
 
 app = Flask(__name__)
@@ -175,7 +176,8 @@ def search_patients():
 @app.route('/fhir/Patient/<patient_id>')
 @login_required
 def get_patient(patient_id):
-    response = fhir_get(f"/Patient/{patient_id}", fhir_server_url=get_fhir_server_url(), timeout=10)       
+    response = fhir_get(f"/Patient/{patient_id}", fhir_server_url=get_fhir_server_url(), timeout=10)
+    session['current_patient_id'] = patient_id       
     if response.status_code == 200:
         patient = response.json()
 
@@ -348,47 +350,85 @@ def get_requesters():
     requesters = sorted(requesters, key=lambda x: x["name"])
     return render_template('partials/requesters.html', requesters=requesters)
     
-    
-@app.route('/fhir/Specialties')
+
+@app.route('/fhir/CopyToPractitioners')
 @login_required
-def get_specialties():
+def get_copy_to_practitioners():
     """
-    Returns a list of unique SNOMED specialty displays and codes from PractitionerRole resources.
+    Returns a list of PractitionerRoles for the copyTo typeahead search.
+    Supports filtering by name parameter.
     """
-    response = fhir_get("/PractitionerRole?_count=100", fhir_server_url=get_fhir_server_url(), timeout=10)
+    # Get search query from request
+    search_query = request.args.get('copyToPractitioner', '').strip().lower()
+    
+    response = fhir_get("/PractitionerRole?_include=PractitionerRole:practitioner&_count=100", fhir_server_url=get_fhir_server_url(), timeout=10)
     if response.status_code != 200:
-        return render_template('specialties.html', specialties=[])
+        return render_template('partials/copy_to_practitioners.html', practitioners=[])
 
     bundle = response.json()
     entries = bundle.get('entry', [])
-    specialties = {}
-
+    practitioners = {}
+    # Build a map of Practitioner id to name
     for entry in entries:
         resource = entry.get('resource', {})
-        # Get all specialty CodeableConcepts
-        specialty_concepts = evaluate(resource, "specialty")
-        # Ensure specialty_concepts is iterable
-        if not isinstance(specialty_concepts, list):
-            specialty_concepts = [specialty_concepts]
-        for concept in specialty_concepts:
-            if isinstance(concept, dict):
-                for coding in concept.get("coding", []):
-                    if coding.get("system") == "http://snomed.info/sct" and coding.get("display") and coding.get("code"):
-                        # Use code as key to avoid duplicates, keep display and code
-                        specialties[coding["code"]] = {
-                            "display": coding["display"],
-                            "code": coding["code"]
-                        }
+        if resource.get('resourceType') == 'Practitioner':
+            practitioner_id = resource.get('id')
+            # Get full name
+            name = resource.get('name', [{}])[0]
+            full_name = ' '.join(name.get('given', [])) + ' ' + name.get('family', '')
+            practitioners[practitioner_id] = full_name.strip()
 
-    # Pass a list of dicts with display and code to the template
-    return render_template('partials/specialties.html', specialties=sorted(specialties.values(), key=lambda x: x["display"]))
+    all_practitioners = []
+    for entry in entries:
+        resource = entry.get('resource', {})
+        if resource.get('resourceType') == 'PractitionerRole':
+            role_id = resource.get('id')
+            # Get practitioner name
+            practitioner_ref = resource.get('practitioner', {}).get('reference', '')
+            practitioner_id = practitioner_ref.split('/')[-1] if practitioner_ref else ''
+            name = practitioners.get(practitioner_id, 'Unknown')
+            # Get specialty display (first SNOMED if available)
+            specialty_display = ''
+            specialty_concepts = resource.get('specialty', [])
+            if specialty_concepts and isinstance(specialty_concepts, list):
+                for concept in specialty_concepts:
+                    for coding in concept.get('coding', []):
+                        if coding.get('system') == "http://snomed.info/sct" and coding.get('display'):
+                            specialty_display = coding['display']
+                            break
+                    if specialty_display:
+                        break
+            # Only add practitioner if specialty_display is valued (not empty)
+            if specialty_display:
+                practitioner = {
+                    "id": role_id,
+                    "name": name,
+                    "specialty": specialty_display
+                }
+                all_practitioners.append(practitioner)
+
+    # Filter practitioners by search query if provided
+    if search_query:
+        filtered_practitioners = []
+        for practitioner in all_practitioners:
+            if (search_query in practitioner["name"].lower() or 
+                search_query in practitioner["specialty"].lower()):
+                filtered_practitioners.append(practitioner)
+        all_practitioners = filtered_practitioners
+
+    # Sort by name and limit to 10 results
+    all_practitioners = sorted(all_practitioners, key=lambda x: x["name"])[:10]
+
+    # Render a partial datalist for copyTo
+    return render_template('partials/copy_to_practitioners.html', practitioners=all_practitioners)
+
 
 @app.route('/fhir/Provider/<org_type>')
 @login_required
 def get_organisation_by_type(org_type):
     """
     Returns a dropdown list of Organisations matching the given type code.
-    org_type: The code for the organisation type (e.g., "prov" for healthcare provider)
+    org_type: The SCT code for the organisation type (e.g., "310074003" for Pathology service provider)
     Uses SNOMED CT as the type system.
     """
     # Use SNOMED CT system for organisation type
@@ -692,17 +732,16 @@ def get_allergies(patient_id):
     return render_template('allergies.html', allergies=allergies)
 
 
-@app.route('/fhir/diagnosticrequest/bundler', methods=['POST'])
-def create_diagnostic_request_bundle():
-    form_data = request.form.to_dict()
-    logging.info(form_data)
-    with open('./json/service_request_bundle.json', 'r', encoding='utf-8') as f:
-        bundle = json.load(f)
-    
-    # Example: include selected tests and reasons
-    # bundle['selectedTests'] = form_data.get('selectedTests', [])
-    # bundle['selectedReasons'] = form_data.get('selectedReasons', [])
-    # Add more FHIR resources as needed
+@app.route('/fhir/diagnosticrequest/bundler/<patient_id>', methods=['POST'])
+def create_diagnostic_request_bundle(patient_id):
+    form_data = get_form_data(request)
+    form_data['patient_id'] = patient_id
+    # Log the processed form data in a readable format
+    logging.info(f"Form data: {json.dumps(form_data, indent=2)}")
+
+    #with open('./json/service_request_bundle.json', 'r', encoding='utf-8') as f:
+    #    bundle = json.load(f)
+    bundle = create_request_bundle(form_data=form_data)
     bundle_json = json.dumps(bundle, indent=2)
     return render_template('partials/json_textarea.html', bundle_json=bundle_json), 200
 
@@ -733,25 +772,29 @@ def diag_valueset_expand():
     params = {
         "url": valueset_url,
         "filter": query,
-        "count": 10
+        "count": 15
     }
 
     try:
-        logging.info(f'{expand_url}?url={params.get("url")}&filter={params.get("filter")}&count={params.get("count")}')
+        ###logging.info(f'{expand_url}?url={params.get("url")}&filter={params.get("filter")}&count={params.get("count")}')
         resp = requests.get(expand_url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
-        #logging.info(data)
-        suggestions = []
+        ###logging.info(data)
+        testNames = []
         contains = data.get("expansion", {}).get("contains", [])
         for item in contains:
-            display = item.get("display") or item.get("code")
+            code = item.get("code", "")
+            display = item.get("display") or code
             if display:
-                suggestions.append(display)
-        return render_template('partials/test_names.html', suggestions=suggestions)
+                testNames.append({
+                    "code": code,
+                    "display": display
+                })
+        return render_template('partials/test_names.html', testNames=testNames)
     except Exception as e:
         print(e.with_traceback)
-        return render_template('partials/test_names.html', suggestions=[])
+        return render_template('partials/test_names.html', testNames=[])
 
 @app.route('/fhir/reasonvalueset/expand')
 def reason_valueset_expand():
@@ -771,17 +814,21 @@ def reason_valueset_expand():
         "count": 10
     }
     try:
-        #logging.info(f'{expand_url}?url={params.get("url")}&filter={params.get("filter")}&count={params.get("count")}')
+        ###logging.info(f'{expand_url}?url={params.get("url")}&filter={params.get("filter")}&count={params.get("count")}')
         resp = requests.get(expand_url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
-        #logging.info(data)
+        ###logging.info(data)
         reasons = []
         contains = data.get("expansion", {}).get("contains", [])
         for item in contains:
-            display = item.get("display") or item.get("code")
+            code = item.get("code", "")
+            display = item.get("display") or code
             if display:
-                reasons.append(display)
+                reasons.append({
+                    "code": code,
+                    "display": display
+                })
         return render_template('partials/reasons.html', reasons=reasons)
     except Exception as e:
         print(e.with_traceback)

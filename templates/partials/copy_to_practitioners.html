@@ -1,0 +1,5 @@
+<datalist id="copyToPractitionerList">
+  {% for practitioner in practitioners %}
+    <option value="{{ practitioner.name }}{% if practitioner.specialty %} ({{ practitioner.specialty }}){% endif %}" data-code="{{ practitioner.id }}">
+  {% endfor %}
+</datalist>

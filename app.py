@@ -994,4 +994,5 @@ def basic_auth_login():
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    app.run(debug=debug_mode)
+    # Bind to all interfaces to ensure localhost works on macOS
+    app.run(host='0.0.0.0', port=5001, debug=debug_mode)

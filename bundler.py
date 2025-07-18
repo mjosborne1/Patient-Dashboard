@@ -619,9 +619,34 @@ def create_request_bundle(form_data):
                         ]
                     },
                     "id": comm_req_id,
+                    "groupIdentifier": {
+                        "use": "usual",
+                        "type": {
+                            "coding": [{
+                                "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                                "code": "PGN",
+                                "display": "Placer Group Number"
+                            }]
+                        },
+                        "system": "http://myclinic.example.org.au/identifier",
+                        "value": requisition_number
+                    },
                     "status": "active",
+                    "category": [{
+                        "coding": [{
+                            "system": "http://terminology.hl7.org/CodeSystem/communication-category",
+                            "code": "notification"
+                        }]
+                    }],
                     "subject": patient_reference,
                     "about": [encounter_reference],
+                    "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
+                    "reasonCode": [{
+                        "coding": [{
+                            "system": "http://terminology.hl7.org.au/CodeSystem/communicationrequest-reason",
+                            "code": "copyto"
+                        }]
+                    }],
                     "recipient": [{
                         "reference": f"PractitionerRole/{recipient_id}"
                     }],
@@ -711,7 +736,8 @@ def create_request_bundle(form_data):
                 "coding": [{
                     "code": bill_type
                 }]
-            }
+            },
+            "beneficiary": patient_reference
         }
         
         # Add Coverage to bundle

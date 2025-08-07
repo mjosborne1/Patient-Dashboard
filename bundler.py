@@ -304,39 +304,6 @@ def create_request_bundle(form_data):
             }
         })
     
-    # Create Encounter for this diagnostic episode
-    encounter_id = str(uuid.uuid4())
-    encounter = {
-        "resourceType": "Encounter",
-        "meta": {
-            "profile": [
-                "http://hl7.org.au/fhir/core/StructureDefinition/au-core-encounter"
-            ]
-        },
-        "id": encounter_id,
-        "status": "planned",
-        "class": {
-            "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
-            "code": "AMB",
-            "display": "ambulatory"
-        },
-        "subject": patient_reference
-    }
-    
-    # Add Encounter to bundle
-    transaction_bundle["entry"].append({
-        "fullUrl": f"urn:uuid:{encounter_id}",
-        "resource": encounter,
-        "request": {
-            "method": "POST",
-            "url": "Encounter"
-        }
-    })
-    
-    encounter_reference = {
-        "reference": f"Encounter/{encounter_id}"
-    }
-    
     # Generate a unique requisition number for this order (8 digits starting with current year)
     current_year = datetime.datetime.now().year % 100  # Get last 2 digits of year (e.g., 25 for 2025)
     import random
@@ -350,6 +317,7 @@ def create_request_bundle(form_data):
     service_requests = []
     for i, test in enumerate(tests):
         sr_id = str(uuid.uuid4())
+        encounter_id = str(uuid.uuid4())  # Generate unique encounter ID for each ServiceRequest
         # Set appropriate profile based on request category
         service_request_profile = "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-servicerequest-path"
         if request_category == "Radiology":
@@ -363,6 +331,24 @@ def create_request_bundle(form_data):
                     service_request_profile
                 ]
             },
+            "contained": [
+                {
+                    "resourceType": "Encounter",
+                    "meta": {
+                        "profile": [
+                            "http://hl7.org.au/fhir/core/StructureDefinition/au-core-encounter"
+                        ]
+                    },
+                    "id": encounter_id,
+                    "status": "planned",
+                    "class": {
+                        "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+                        "code": "AMB",
+                        "display": "ambulatory"
+                    },
+                    "subject": patient_reference
+                }
+            ],
             "extension": [
                 {
                     "url": "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-displaysequence",
@@ -412,7 +398,10 @@ def create_request_bundle(form_data):
                 "text": test.get("display", "")
             },
             "subject": patient_reference,
-            "encounter": encounter_reference,
+            "encounter": {
+                "reference": f"#{encounter_id}",
+                "type": "Encounter"
+            },
             "authoredOn": get_localtime_bne()
         }
         
@@ -482,12 +471,12 @@ def create_request_bundle(form_data):
             "status": "requested",
             "intent": "order",
             "focus": {
-                "reference": f"ServiceRequest/{sr_id}"
+                "reference": f"urn:uuid:{sr_id}"
             },
             "for": patient_reference,
             "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
             "partOf": [{
-                "reference": f"Task/{group_task_id}"
+                "reference": f"urn:uuid:{group_task_id}"
             }],
             "authoredOn": get_localtime_bne()
         }
@@ -535,14 +524,8 @@ def create_request_bundle(form_data):
             "description": f"{request_category} Order Group",
             "for": patient_reference,
             "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
-            "authoredOn": get_localtime_bne(),
-            "partOf": []
+            "authoredOn": get_localtime_bne()
         }
-        
-        for sr in service_requests:
-            task_group["partOf"].append({
-                "reference": f"ServiceRequest/{sr['id']}"
-            })
             
         # Add Task group to bundle
         transaction_bundle["entry"].append({
@@ -639,7 +622,7 @@ def create_request_bundle(form_data):
                         }]
                     }],
                     "subject": patient_reference,
-                    "about": [encounter_reference],
+                    "about": [{"reference": f"urn:uuid:{sr['id']}"} for sr in service_requests],
                     "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
                     "reasonCode": [{
                         "coding": [{

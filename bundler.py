@@ -705,6 +705,16 @@ def create_request_bundle(form_data):
     # Add Coverage as contained resource if provided
     bill_type = form_data.get('billingCategory', '')
     if bill_type:
+        # Map billing category codes to their display text
+        billing_category_mapping = {
+            'PUBLICPOL': 'Medicare',
+            'VET': 'Department of Veterans\' Affairs',
+            'pay': 'Private Pay',
+            'payconc': 'Private Pay with Concession',
+            'AUPUBHOSP': 'Public Hospital',
+            'WCBPOL': 'Workers\' Compensation'
+        }
+        
         coverage_id = str(uuid.uuid4())
         coverage = {
             "resourceType": "Coverage",
@@ -718,7 +728,8 @@ def create_request_bundle(form_data):
             "type": {
                 "coding": [{
                     "code": bill_type
-                }]
+                }],
+                "text": billing_category_mapping.get(bill_type, bill_type)
             },
             "beneficiary": patient_reference
         }

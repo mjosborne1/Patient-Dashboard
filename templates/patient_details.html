@@ -110,7 +110,8 @@
                     hx-target="#jsonData"
                     hx-trigger="click"
                     hx-swap="outerHTML"
-                    hx-indicator="#jsonData-spinner">
+                    hx-indicator="#jsonData-spinner"
+                    onclick="loadAllPatientData('{{ patient.id }}')">
                     Show Patient Summary
                 </button>
                 <button 
@@ -299,6 +300,37 @@
             console.log(jsonDataDiv.textContent);        
         }
     });
+    
+    // Load all patient data when Show Patient Summary is clicked
+    function loadAllPatientData(patientId) {
+        // Small delay to let the summary request initiate first
+        setTimeout(() => {
+            // Trigger Lab Results
+            const labResultsBtn = document.querySelector('button[hx-get="/fhir/LabResults/' + patientId + '"]');
+            if (labResultsBtn) labResultsBtn.click();
+            
+            // Trigger Vital Signs
+            const vitalSignsBtn = document.querySelector('button[hx-get="/fhir/VitalSigns/' + patientId + '"]');
+            if (vitalSignsBtn) vitalSignsBtn.click();
+            
+            // Trigger Medications
+            const medicationsBtn = document.querySelector('button[hx-get="/fhir/Medications/' + patientId + '"]');
+            if (medicationsBtn) medicationsBtn.click();
+            
+            // Trigger Allergies
+            const allergiesBtn = document.querySelector('button[hx-get="/fhir/Allergies/' + patientId + '"]');
+            if (allergiesBtn) allergiesBtn.click();
+            
+            // Trigger Procedures
+            const proceduresBtn = document.querySelector('button[hx-get="/fhir/Procedures/' + patientId + '"]');
+            if (proceduresBtn) proceduresBtn.click();
+            
+            // Trigger Immunisation History
+            const immunisationBtn = document.querySelector('button[hx-get="/fhir/Immunisation/' + patientId + '"]');
+            if (immunisationBtn) immunisationBtn.click();
+        }, 100);
+    }
+    
     // Add server url header to HTMX requests
     document.body.addEventListener('htmx:configRequest', function(evt) {
     const fhirServerUrl = localStorage.getItem('fhir_server_url');

@@ -313,6 +313,99 @@ def create_request_bundle(form_data):
     # Generate task group ID early so individual tasks can reference it
     group_task_id = str(uuid.uuid4())
     
+    # Create supporting resources first (before ServiceRequests that reference them)
+    pregnancy_obs_id = None
+    doc_ref_id = None
+    
+    # Create Pregnancy Observation if pregnancy status is indicated
+    is_pregnant = form_data.get('isPregnant', False)
+    if is_pregnant == 'true' or is_pregnant is True:
+        pregnancy_obs_id = str(uuid.uuid4())
+        
+        pregnancy_obs = {
+            "resourceType": "Observation",
+            "meta": {
+                "profile": [
+                    "http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-pregnancy-status-uv-ips"
+                ]
+            },
+            "id": pregnancy_obs_id,
+            "status": "final",
+            "category": [{
+                "coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                    "code": "exam",
+                    "display": "Exam"
+                }]
+            }],
+            "code": {
+                "coding": [{
+                    "system": "http://snomed.info/sct",
+                    "code": "77386006",
+                    "display": "Pregnancy"
+                }]
+            },
+            "subject": patient_reference,
+            "effectiveDateTime": get_localtime_bne(),
+            "valueCodeableConcept": {
+                "coding": [{
+                    "system": "http://snomed.info/sct",
+                    "code": "77386006",
+                    "display": "Pregnant"
+                }]
+            }
+        }
+        
+        # Add Pregnancy Observation to bundle
+        transaction_bundle["entry"].append({
+            "fullUrl": f"urn:uuid:{pregnancy_obs_id}",
+            "resource": pregnancy_obs,
+            "request": {
+                "method": "POST",
+                "url": "Observation"
+            }
+        })
+    
+    # Create DocumentReference for clinical notes if provided
+    clinical_context = form_data.get('clinicalContext', '')
+    if clinical_context:
+        doc_ref_id = str(uuid.uuid4())
+        
+        # Base64 encode the clinical context
+        encoded_notes = base64.b64encode(clinical_context.encode('utf-8')).decode('utf-8')
+        
+        doc_ref = {
+            "resourceType": "DocumentReference",
+            "id": doc_ref_id,
+            "status": "current",
+            "type": {
+                "coding": [{
+                    "system": "http://loinc.org",
+                    "code": "34109-9",
+                    "display": "Note"
+                }]
+            },
+            "subject": patient_reference,
+            "date": get_localtime_bne(),
+            "content": [{
+                "attachment": {
+                    "contentType": "text/plain",
+                    "data": encoded_notes,
+                    "title": "Clinical Context"
+                }
+            }]
+        }
+        
+        # Add DocumentReference to bundle
+        transaction_bundle["entry"].append({
+            "fullUrl": f"urn:uuid:{doc_ref_id}",
+            "resource": doc_ref,
+            "request": {
+                "method": "POST",
+                "url": "DocumentReference"
+            }
+        })
+    
     # Create a ServiceRequest for each test
     service_requests = []
     for i, test in enumerate(tests):
@@ -427,6 +520,27 @@ def create_request_bundle(form_data):
             
             if reason_list:
                 service_request["reasonCode"] = reason_list
+        
+        # Prepare supportingInfo array
+        supporting_info = []
+        
+        # Check if pregnancy status should be added
+        if pregnancy_obs_id:
+            supporting_info.append({
+                "reference": f"urn:uuid:{pregnancy_obs_id}",
+                "display": "Pregnancy status"
+            })
+        
+        # Check if clinical context DocumentReference should be added
+        if doc_ref_id:
+            supporting_info.append({
+                "reference": f"urn:uuid:{doc_ref_id}",
+                "display": "Clinical Context"
+            })
+        
+        # Add supportingInfo to ServiceRequest if we have any
+        if supporting_info:
+            service_request["supportingInfo"] = supporting_info
                 
         # Add ServiceRequest to bundle
         transaction_bundle["entry"].append({
@@ -474,6 +588,7 @@ def create_request_bundle(form_data):
                 "reference": f"urn:uuid:{sr_id}"
             },
             "for": patient_reference,
+            # supportingInfo goes here
             "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
             "partOf": [{
                 "reference": f"urn:uuid:{group_task_id}"
@@ -534,46 +649,6 @@ def create_request_bundle(form_data):
             "request": {
                 "method": "POST",
                 "url": "Task"
-            }
-        })
-    
-    # Add DocumentReference for clinical notes (if provided)
-    clinical_context = form_data.get('clinicalContext', '')
-    if clinical_context:
-        doc_ref_id = str(uuid.uuid4())
-        
-        # Base64 encode the clinical context
-        encoded_notes = base64.b64encode(clinical_context.encode('utf-8')).decode('utf-8')
-        
-        doc_ref = {
-            "resourceType": "DocumentReference",
-            "id": doc_ref_id,
-            "status": "current",
-            "type": {
-                "coding": [{
-                    "system": "http://loinc.org",
-                    "code": "34109-9",
-                    "display": "Note"
-                }]
-            },
-            "subject": patient_reference,
-            "date": get_localtime_bne(),
-            "content": [{
-                "attachment": {
-                    "contentType": "text/plain",
-                    "data": encoded_notes,
-                    "title": "Clinical Context"
-                }
-            }]
-        }
-        
-        # Add DocumentReference to bundle
-        transaction_bundle["entry"].append({
-            "fullUrl": f"urn:uuid:{doc_ref_id}",
-            "resource": doc_ref,
-            "request": {
-                "method": "POST",
-                "url": "DocumentReference"
             }
         })
     

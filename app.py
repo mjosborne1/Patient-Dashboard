@@ -1,4 +1,4 @@
-from flask import Flask, g, render_template, jsonify, request, session, redirect, url_for
+from flask import Flask, g, render_template, jsonify, request, session, redirect, url_for, make_response
 import requests
 import json
 import logging
@@ -129,26 +129,131 @@ def get_patients_table_body():
 @app.route('/fhir/Patients')
 @login_required
 def get_patients():
-    response = fhir_get("/Patient?_count=10", fhir_server_url=get_fhir_server_url(), timeout=10)
-    if response.status_code == 200:
-        patients = response.json().get('entry', [])
-        processed_patients = process_patient_results(patients)
-        return render_template('patients.html', patients=processed_patients)
+    # Get pagination parameters
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
+    search_term = request.args.get('q', '').strip().lower()
+    
+    logging.info(f"get_patients called with page={page}, per_page={per_page}, search_term='{search_term}', is_htmx={request.headers.get('HX-Request') is not None}")
+    
+    if search_term:
+        # Handle search with pagination
+        try:
+            # For search, we need to fetch more records to filter client-side
+            response = fhir_get("/Patient?_count=1000", fhir_server_url=get_fhir_server_url(), timeout=10)
+            if response.status_code == 200:
+                patients = response.json().get('entry', [])
+                # Filter patients by name (case-insensitive, anywhere in given or family)
+                filtered_patients = []
+                for entry in patients:
+                    resource = entry.get('resource', {})
+                    names = resource.get('name', [])
+                    for name in names:
+                        given_names = ' '.join(name.get('given', []))
+                        family_name = name.get('family', '')
+                        full_name = f"{given_names} {family_name}".strip().lower()
+                        if search_term in full_name:
+                            filtered_patients.append(entry)
+                            break  # Only need to match one name per patient
+                
+                # Apply pagination to filtered results (client-side pagination for search)
+                skip = (page - 1) * per_page
+                total_filtered = len(filtered_patients)
+                paginated_patients = filtered_patients[skip:skip + per_page]
+                
+                processed_patients = process_patient_results(paginated_patients)
+                
+                # Calculate pagination info for filtered results
+                total_pages = max(1, (total_filtered + per_page - 1) // per_page) if total_filtered > 0 else 1
+                has_next = page < total_pages and total_filtered > 0
+                has_prev = page > 1
+                
+                # For HTMX requests targeting table body only, return just the table body with pagination info
+                # For HTMX requests targeting content or no target specified, return full page
+                hx_target = request.headers.get('HX-Target', '')
+                if request.headers.get('HX-Request') and 'patients-table-body' in hx_target:
+                    response_html = render_template('patient_table_body.html', patients=processed_patients)
+                    resp = make_response(response_html)
+                    resp.headers['X-Current-Page'] = str(page)
+                    resp.headers['X-Total-Pages'] = str(total_pages)
+                    resp.headers['X-Total-Items'] = str(total_filtered)
+                    resp.headers['X-Per-Page'] = str(per_page)
+                    resp.headers['X-Has-Next'] = str(has_next).lower()
+                    resp.headers['X-Has-Prev'] = str(has_prev).lower()
+                    return resp
+                else:
+                    return render_template('patients.html', 
+                                         patients=processed_patients,
+                                         current_page=page,
+                                         total_pages=total_pages,
+                                         total_items=total_filtered,
+                                         per_page=per_page,
+                                         has_next=has_next,
+                                         has_prev=has_prev)
+            else:
+                return jsonify({"error": "Failed to search patients"}), 500
+        except Exception as e:
+            logging.error(f"Error searching patients: {e}")
+            return jsonify({"error": "Search failed"}), 500
     else:
-        return jsonify({"error": "Failed to fetch patients"}), 500
+        # Regular pagination without search
+        # Make FHIR request with pagination using page parameter
+        response = fhir_get(f"/Patient?_count={per_page}&page={page}", fhir_server_url=get_fhir_server_url(), timeout=10)
+        if response.status_code == 200:
+            bundle = response.json()
+            patients = bundle.get('entry', [])
+            total = bundle.get('total', 0)
+            
+            processed_patients = process_patient_results(patients)
+            
+            # Calculate pagination info
+            total_pages = max(1, (total + per_page - 1) // per_page) if total > 0 else 1
+            has_next = page < total_pages and total > 0
+            has_prev = page > 1
+            
+            # For HTMX requests targeting table body only, return just the table body with pagination info
+            # For HTMX requests targeting content or no target specified, return full page
+            hx_target = request.headers.get('HX-Target', '')
+            if request.headers.get('HX-Request') and 'patients-table-body' in hx_target:
+                response_html = render_template('patient_table_body.html', patients=processed_patients)
+                # Add pagination headers for JavaScript to read
+                resp = make_response(response_html)
+                resp.headers['X-Current-Page'] = str(page)
+                resp.headers['X-Total-Pages'] = str(total_pages)
+                resp.headers['X-Total-Items'] = str(total)
+                resp.headers['X-Per-Page'] = str(per_page)
+                resp.headers['X-Has-Next'] = str(has_next).lower()
+                resp.headers['X-Has-Prev'] = str(has_prev).lower()
+                return resp
+            else:
+                # For regular requests or HTMX requests targeting #content, return full page
+                print(f"Returning full template with: page={page}, total_pages={total_pages}, total_items={total}, per_page={per_page}")
+                return render_template('patients.html', 
+                                     patients=processed_patients,
+                                     current_page=page,
+                                     total_pages=total_pages,
+                                     total_items=total,
+                                     per_page=per_page,
+                                     has_next=has_next,
+                                     has_prev=has_prev)
+        else:
+            return jsonify({"error": "Failed to fetch patients"}), 500
 
 @app.route('/fhir/search_patients', methods=['POST'])
 @login_required
 def search_patients():   
     search_term = request.form.get('q', '').strip().lower()
+    page = request.form.get('page', 1, type=int)
+    per_page = request.form.get('per_page', 10, type=int)
     
     if not search_term:
-        # If search is empty, return all patients
-        return get_patients_table_body()
+        # If search is empty, return paginated patients
+        return redirect(url_for('get_patients', page=page, per_page=per_page))
     
     # Search patients by name or identifier
     try:
-        # Fetch a bundle of patients (increase _count as needed)
+        # For search, we need to fetch more records to filter client-side
+        # This is not ideal but FHIR search capabilities may be limited
         response = fhir_get("/Patient?_count=1000", fhir_server_url=get_fhir_server_url(), timeout=10)
         if response.status_code == 200:
             patients = response.json().get('entry', [])
@@ -164,8 +269,29 @@ def search_patients():
                     if search_term in full_name:
                         filtered_patients.append(entry)
                         break  # Only need to match one name per patient
-            processed_patients = process_patient_results(filtered_patients)
-            return render_template('patient_table_body.html', patients=processed_patients)
+            
+            # Apply pagination to filtered results
+            total_filtered = len(filtered_patients)
+            skip = (page - 1) * per_page
+            paginated_patients = filtered_patients[skip:skip + per_page]
+            
+            processed_patients = process_patient_results(paginated_patients)
+            
+            # Calculate pagination info for filtered results
+            total_pages = (total_filtered + per_page - 1) // per_page
+            has_next = page < total_pages
+            has_prev = page > 1
+            
+            # Add pagination headers for JavaScript
+            response_html = render_template('patient_table_body.html', patients=processed_patients)
+            resp = make_response(response_html)
+            resp.headers['X-Current-Page'] = str(page)
+            resp.headers['X-Total-Pages'] = str(total_pages)
+            resp.headers['X-Total-Items'] = str(total_filtered)
+            resp.headers['X-Per-Page'] = str(per_page)
+            resp.headers['X-Has-Next'] = str(has_next).lower()
+            resp.headers['X-Has-Prev'] = str(has_prev).lower()
+            return resp
         else:
             logging.error(f"API error: {response.status_code} when searching patients")
             return "<tr><td colspan='7'>Error searching patients</td></tr>", 500
@@ -176,8 +302,10 @@ def search_patients():
 @app.route('/fhir/Patient/<patient_id>')
 @login_required
 def get_patient(patient_id):
+    print(f"get_patient called with patient_id: {patient_id}")
     response = fhir_get(f"/Patient/{patient_id}", fhir_server_url=get_fhir_server_url(), timeout=10)
     session['current_patient_id'] = patient_id       
+    print(f"FHIR response status code: {response.status_code}")
     if response.status_code == 200:
         patient = response.json()
 
@@ -223,6 +351,7 @@ def get_patient(patient_id):
 
         return render_template('patient_details.html', patient=patient)
     else:
+        print(f"Failed to fetch patient details. Status code: {response.status_code}, Response text: {response.text}")
         return jsonify({"error": "Failed to fetch patient details"}), 500
 
 
@@ -874,7 +1003,7 @@ def get_demographics():
                         age_groups["0-18"] += 1
                     elif age <= 35:
                         age_groups["19-35"] += 1
-                    elif age <= 55:
+                    elif age <= 55: 
                         age_groups["36-55"] += 1
                     elif age <= 75:
                         age_groups["56-75"] += 1
@@ -994,5 +1123,6 @@ def basic_auth_login():
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    port = int(os.environ.get('PORT', 5001))
     # Bind to all interfaces to ensure localhost works on macOS
-    app.run(host='0.0.0.0', port=5001, debug=debug_mode)
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)

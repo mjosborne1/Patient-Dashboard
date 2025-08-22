@@ -249,6 +249,9 @@ header.with-sidebar {
 .htmx-request .htmx-indicator {
     opacity: 1
 }
+.htmx-indicator.show {
+    opacity: 1 !important;
+}
 .htmx-request.nav-link::after {
     content: '';
     position: absolute;

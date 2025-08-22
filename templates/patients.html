@@ -4,10 +4,11 @@
     <div class="col-md-6">
         <div class="input-group">
             <input type="search" id="patient-search" name="q" class="form-control" placeholder="Search patients..." 
-                   hx-post="/fhir/search_patients" 
+                   hx-get="/fhir/Patients" 
                    hx-trigger="keyup changed delay:500ms, search" 
                    hx-target="#patients-table-body"
-                   hx-indicator="#search-indicator">
+                   hx-indicator="#search-indicator"
+                   hx-vals='{"page": 1}'>
             <span class="input-group-text">
                 <i class="fas fa-search"></i>
                 <span id="search-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-2" role="status"></span>
@@ -55,3 +56,269 @@
         </tbody>
     </table>
 </div>
+
+<!-- Pagination Controls -->
+<nav aria-label="Patient pagination" id="pagination-nav" 
+     data-current-page="{{ current_page|default(1) }}"
+     data-total-pages="{{ total_pages|default(1) }}"
+     data-total-items="{{ total_items|default(0) }}"
+     data-per-page="{{ per_page|default(10) }}">
+    <div class="d-flex justify-content-between align-items-center">
+        <div class="pagination-info">
+            <span id="pagination-info-text" class="text-muted"></span>
+        </div>
+        <ul class="pagination pagination-sm">
+            <li class="page-item" id="prev-page">
+                <button class="page-link" 
+                        onclick="previousPage()">
+                    <i class="fas fa-chevron-left"></i> Previous
+                </button>
+            </li>
+            <li class="page-item active" id="current-page">
+                <span class="page-link" id="current-page-number">1</span>
+            </li>
+            <li class="page-item" id="next-page">
+                <button class="page-link" 
+                        onclick="nextPage()">
+                    Next <i class="fas fa-chevron-right"></i>
+                </button>
+            </li>
+        </ul>
+        <div class="pagination-spinner">
+            <span id="pagination-spinner" class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
+        </div>
+    </div>
+</nav>
+
+<script>
+// Initialize pagination state
+let currentPage = 1;
+let totalPages = 1;
+let totalItems = 0;
+let itemsPerPage = 10;
+
+// Function to trigger previous page
+function previousPage() {
+    console.log('previousPage called, currentPage:', currentPage);
+    if (currentPage > 1) {
+        loadPage(currentPage - 1);
+    } else {
+        console.log('Already on first page');
+    }
+}
+
+// Function to trigger next page
+function nextPage() {
+    console.log('nextPage called, currentPage:', currentPage, 'totalPages:', totalPages);
+    if (currentPage < totalPages) {
+        loadPage(currentPage + 1);
+    } else {
+        console.log('Already on last page');
+    }
+}
+
+// Function to load a specific page
+function loadPage(page) {
+    console.log('loadPage called with page:', page);
+    
+    const searchInput = document.getElementById('patient-search');
+    const searchTerm = searchInput ? searchInput.value : '';
+    
+    // Build URL with parameters
+    let url = `/fhir/Patients?page=${page}`;
+    if (searchTerm) {
+        url += `&q=${encodeURIComponent(searchTerm)}`;
+    }
+    
+    console.log('Making request to:', url);
+    
+    // Show spinner manually
+    const spinner = document.getElementById('pagination-spinner');
+    if (spinner) {
+        spinner.classList.add('show');
+    }
+    
+    // Use fetch instead of htmx.ajax for more reliable handling
+    fetch(url, {
+        method: 'GET',
+        headers: {
+            'HX-Request': 'true',
+            'HX-Target': '#patients-table-body'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        // Extract pagination headers
+        const currentPageHeader = response.headers.get('X-Current-Page');
+        const totalPagesHeader = response.headers.get('X-Total-Pages');
+        const totalItemsHeader = response.headers.get('X-Total-Items');
+        const perPageHeader = response.headers.get('X-Per-Page');
+        
+        console.log('Response headers:', {
+            currentPageHeader,
+            totalPagesHeader,
+            totalItemsHeader,
+            perPageHeader
+        });
+        
+        // Update pagination controls if headers are present
+        if (currentPageHeader && totalPagesHeader && totalItemsHeader && perPageHeader) {
+            const currentPage = parseInt(currentPageHeader);
+            const totalPages = parseInt(totalPagesHeader);
+            const totalItems = parseInt(totalItemsHeader);
+            const perPage = parseInt(perPageHeader);
+            
+            updatePaginationControls(currentPage, totalPages, totalItems, perPage);
+        }
+        
+        return response.text();
+    })
+    .then(html => {
+        console.log('Request completed successfully');
+        // Update the table body
+        const tableBody = document.getElementById('patients-table-body');
+        if (tableBody) {
+            tableBody.innerHTML = html;
+            // Re-process the new content with HTMX to attach event listeners
+            if (typeof htmx !== 'undefined') {
+                htmx.process(tableBody);
+            }
+        }
+        // Hide spinner
+        if (spinner) {
+            spinner.classList.remove('show');
+        }
+    })
+    .catch(error => {
+        console.error('Request failed:', error);
+        // Hide spinner
+        if (spinner) {
+            spinner.classList.remove('show');
+        }
+        // Show error message
+        const tableBody = document.getElementById('patients-table-body');
+        if (tableBody) {
+            tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-3">Error loading patients. Please try again.</td></tr>';
+        }
+    });
+}
+
+// Update pagination controls based on current state
+function updatePaginationControls(page, total, totalCount, perPage) {
+    currentPage = page || 1;
+    totalPages = Math.max(1, total || 1);
+    totalItems = totalCount || 0;
+    itemsPerPage = perPage || 10;
+    
+    console.log('Updating pagination:', {currentPage, totalPages, totalItems, itemsPerPage});
+    
+    // Update page number display
+    document.getElementById('current-page-number').textContent = currentPage;
+    
+    // Update info text
+    const startItem = totalItems > 0 ? ((currentPage - 1) * itemsPerPage) + 1 : 0;
+    const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+    document.getElementById('pagination-info-text').textContent = 
+        `Showing ${startItem}-${endItem} of ${totalItems} patients`;
+    
+    // Enable/disable previous button
+    const prevButton = document.getElementById('prev-page');
+    const prevButtonElement = prevButton.querySelector('button');
+    if (currentPage <= 1 || totalItems === 0) {
+        prevButton.classList.add('disabled');
+        prevButtonElement.disabled = true;
+    } else {
+        prevButton.classList.remove('disabled');
+        prevButtonElement.disabled = false;
+    }
+    
+    // Enable/disable next button
+    const nextButton = document.getElementById('next-page');
+    const nextButtonElement = nextButton.querySelector('button');
+    if (currentPage >= totalPages || totalPages <= 1 || totalItems === 0) {
+        nextButton.classList.add('disabled');
+        nextButtonElement.disabled = true;
+    } else {
+        nextButton.classList.remove('disabled');
+        nextButtonElement.disabled = false;
+    }
+}
+
+// Listen for HTMX events to update pagination
+document.body.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.xhr.responseURL.includes('/fhir/Patients')) {
+        // Extract pagination info from response headers
+        const xhr = evt.detail.xhr;
+        const currentPageHeader = xhr.getResponseHeader('X-Current-Page');
+        const totalPagesHeader = xhr.getResponseHeader('X-Total-Pages');
+        const totalItemsHeader = xhr.getResponseHeader('X-Total-Items');
+        const perPageHeader = xhr.getResponseHeader('X-Per-Page');
+        
+        console.log('HTMX Response headers:', {
+            currentPageHeader,
+            totalPagesHeader,
+            totalItemsHeader,
+            perPageHeader,
+            url: evt.detail.xhr.responseURL
+        });
+        
+        if (currentPageHeader && totalPagesHeader && totalItemsHeader && perPageHeader) {
+            const page = parseInt(currentPageHeader);
+            const total = parseInt(totalPagesHeader);
+            const totalCount = parseInt(totalItemsHeader);
+            const perPage = parseInt(perPageHeader);
+            
+            updatePaginationControls(page, total, totalCount, perPage);
+        } else {
+            console.log('Missing pagination headers from HTMX response, trying data attributes');
+            // If no headers, try to read from data attributes (for full page loads)
+            initializePaginationFromDataAttributes();
+        }
+    }
+});
+
+// Function to initialize pagination from data attributes
+function initializePaginationFromDataAttributes() {
+    const paginationNav = document.getElementById('pagination-nav');
+    if (paginationNav) {
+        const serverCurrentPage = parseInt(paginationNav.dataset.currentPage) || 1;
+        const serverTotalPages = parseInt(paginationNav.dataset.totalPages) || 1;
+        const serverTotalItems = parseInt(paginationNav.dataset.totalItems) || 0;
+        const serverPerPage = parseInt(paginationNav.dataset.perPage) || 10;
+        
+        console.log('Reading from data attributes:', {
+            serverCurrentPage,
+            serverTotalPages, 
+            serverTotalItems,
+            serverPerPage
+        });
+        
+        updatePaginationControls(serverCurrentPage, serverTotalPages, serverTotalItems, serverPerPage);
+    } else {
+        console.log('Pagination nav element not found');
+    }
+}
+
+// Listen for search input changes to reset pagination
+document.getElementById('patient-search').addEventListener('input', function() {
+    // Reset to page 1 when searching
+    currentPage = 1;
+});
+
+// Initialize pagination on page load
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOMContentLoaded fired');
+    initializePaginationFromDataAttributes();
+});
+
+// Also try to initialize when HTMX swaps content
+document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.xhr && evt.detail.xhr.responseURL.includes('/fhir/Patients')) {
+        console.log('HTMX afterSwap fired for patients');
+        initializePaginationFromDataAttributes();
+    }
+});
+</script>

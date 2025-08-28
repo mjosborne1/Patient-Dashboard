@@ -964,6 +964,123 @@ def reason_valueset_expand():
         return render_template('partials/reasons.html', reasons=[])
 
 
+@app.route('/fhir/specimentype/expand')
+def specimen_type_expand():
+    """
+    Expands the AU Specimen Type ValueSet for specimen type selection.
+    Query params:
+      - specimenType: search string
+    """
+    query = request.args.get('specimenType', '').strip()
+    if not query:
+        return '<option value="">Start typing to search specimen types...</option>'
+    
+    valueset_url = 'https://healthterminologies.gov.au/fhir/ValueSet/specimen-type-1'
+    terminology_server = "https://r4.ontoserver.csiro.au/fhir" 
+    expand_url = f"{terminology_server}/ValueSet/$expand"
+    params = {
+        "url": valueset_url,
+        "filter": query,
+        "count": 15
+    }
+
+    try:
+        resp = requests.get(expand_url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        options = []
+        contains = data.get("expansion", {}).get("contains", [])
+        for item in contains:
+            code = item.get("code", "")
+            display = item.get("display") or code
+            if display:
+                options.append(f'<option value="{display}" data-code="{code}">{display}</option>')
+        
+        return ''.join(options)
+    except Exception as e:
+        print(f"Error expanding specimen type ValueSet: {e}")
+        return '<option value="">Error loading specimen types</option>'
+
+
+@app.route('/fhir/collectionmethod/expand')
+def collection_method_expand():
+    """
+    Expands the AU Specimen Collection Procedure ValueSet for collection method selection.
+    Query params:
+      - collectionMethod: search string
+    """
+    query = request.args.get('collectionMethod', '').strip()
+    if not query:
+        return '<option value="">Start typing to search collection methods...</option>'
+    
+    valueset_url = 'https://healthterminologies.gov.au/fhir/ValueSet/specimen-collection-procedure-1'
+    terminology_server = "https://r4.ontoserver.csiro.au/fhir" 
+    expand_url = f"{terminology_server}/ValueSet/$expand"
+    params = {
+        "url": valueset_url,
+        "filter": query,
+        "count": 15
+    }
+
+    try:
+        resp = requests.get(expand_url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        options = []
+        contains = data.get("expansion", {}).get("contains", [])
+        for item in contains:
+            code = item.get("code", "")
+            display = item.get("display") or code
+            if display:
+                options.append(f'<option value="{display}" data-code="{code}">{display}</option>')
+        
+        return ''.join(options)
+    except Exception as e:
+        print(f"Error expanding collection method ValueSet: {e}")
+        return '<option value="">Error loading collection methods</option>'
+
+
+@app.route('/fhir/bodysite/expand')
+def body_site_expand():
+    """
+    Expands the AU Body Site ValueSet for body site selection.
+    Query params:
+      - bodySite: search string
+    """
+    query = request.args.get('bodySite', '').strip()
+    if not query:
+        return '<option value="">Start typing to search body sites...</option>'
+    
+    valueset_url = 'https://healthterminologies.gov.au/fhir/ValueSet/body-site-1'
+    terminology_server = "https://r4.ontoserver.csiro.au/fhir" 
+    expand_url = f"{terminology_server}/ValueSet/$expand"
+    params = {
+        "url": valueset_url,
+        "filter": query,
+        "count": 15
+    }
+
+    try:
+        resp = requests.get(expand_url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        options = []
+        contains = data.get("expansion", {}).get("contains", [])
+        for item in contains:
+            code = item.get("code", "")
+            display = item.get("display") or code
+            if display:
+                options.append(f'<option value="{display}" data-code="{code}">{display}</option>')
+        
+        return ''.join(options)
+    except Exception as e:
+        print(f"Error expanding body site ValueSet: {e}")
+        return '<option value="">Error loading body sites</option>'
+
+
 @app.route('/fhir/Demographics')
 @login_required
 def get_demographics():

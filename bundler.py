@@ -19,8 +19,81 @@ import logging
 from json import dumps
 import ast
 import base64
+import requests
 from fhirclient.models import bundle, servicerequest, patient, encounter, practitioner, practitionerrole
-from fhirclient.models import location, task, communicationrequest, consent, documentreference, coverage
+from fhirclient.models import location, task, communicationrequest, consent, documentreference, coverage, specimen
+
+def lookup_snomed_code(display_text, valueset_url):
+    """
+    Look up SNOMED code for a display text using terminology server.
+    
+    Args:
+        display_text (str): The display text to search for
+        valueset_url (str): The ValueSet URL to search in
+        
+    Returns:
+        str: The SNOMED code if found, empty string otherwise
+    """
+    if not display_text or not valueset_url:
+        return ""
+    
+    try:
+        terminology_server = "https://r4.ontoserver.csiro.au/fhir"
+        expand_url = f"{terminology_server}/ValueSet/$expand"
+        params = {
+            "url": valueset_url,
+            "filter": display_text,
+            "count": 10
+        }
+        
+        resp = requests.get(expand_url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        contains = data.get("expansion", {}).get("contains", [])
+        for item in contains:
+            # Look for exact match on display text
+            if item.get("display", "").lower() == display_text.lower():
+                return item.get("code", "")
+        
+        # If no exact match, return the first result's code
+        if contains:
+            return contains[0].get("code", "")
+            
+    except Exception as e:
+        logging.warning(f"Failed to lookup SNOMED code for '{display_text}': {e}")
+        
+        # Fallback to common SNOMED codes for testing
+        fallback_codes = {
+            # Specimen types
+            'blood': '119297000',
+            'serum': '119364003',
+            'plasma': '119361006',
+            'urine': '122575003',
+            'saliva': '119342007',
+            'stool': '119339001',
+            'swab': '258603007',
+            'tissue': '119376003',
+            
+            # Collection methods
+            'venipuncture': '22778000', 
+            'needle biopsy': '129314006',
+            'capillary blood sampling': '277762005',
+            'clean catch urine': '71181003',
+            'midstream urine': '258574006',
+            
+            # Body sites
+            'arm': '53120007',
+            'left arm': '368208006',
+            'right arm': '368209003',
+            'finger': '7569003',
+            'hand': '85562004',
+            'leg': '61685007',
+            'neck': '45048000'
+        }
+        return fallback_codes.get(display_text.lower(), "")
+    
+    return ""
 
 def generate_narrative_text(resource):
     """
@@ -81,6 +154,28 @@ def generate_narrative_text(resource):
         
         narrative_text += f"<p><strong>Status:</strong> {status}</p>"
         narrative_text += f"<p><strong>Class:</strong> {class_display}</p>"
+        
+    elif resource_type == "Specimen":
+        # Add specimen specific narrative elements
+        if "type" in resource:
+            type_display = get_display_value(resource["type"])
+            if type_display:
+                narrative_text += f"<p><strong>Specimen Type:</strong> {type_display}</p>"
+                
+        if "collection" in resource:
+            collection = resource["collection"]
+            if "method" in collection:
+                method_display = get_display_value(collection["method"])
+                if method_display:
+                    narrative_text += f"<p><strong>Collection Method:</strong> {method_display}</p>"
+                    
+            if "bodySite" in collection:
+                site_display = get_display_value(collection["bodySite"])
+                if site_display:
+                    narrative_text += f"<p><strong>Body Site:</strong> {site_display}</p>"
+                    
+            if "collectedDateTime" in collection:
+                narrative_text += f"<p><strong>Collection Date/Time:</strong> {collection['collectedDateTime']}</p>"
     
     elif resource_type == "Task":
         status = resource.get("status", "")
@@ -408,6 +503,150 @@ def create_request_bundle(form_data):
     
     # Create a ServiceRequest for each test
     service_requests = []
+    specimen_references = []  # Store specimen references for ServiceRequests
+    
+    # Create Specimen if this is a Pathology request and specimen collection is checked
+    specimen_id = None
+    specimen_collected = form_data.get('specimenCollected') == 'true'
+    
+    if request_category == "Pathology" and specimen_collected:
+        specimen_type = form_data.get('specimenType', '').strip()
+        collection_method = form_data.get('collectionMethod', '').strip()
+        body_site = form_data.get('bodySite', '').strip()
+        collection_datetime = form_data.get('collectionDateTime', '').strip()
+        
+        # Try to get codes from hidden fields first, then lookup if needed
+        specimen_type_code = form_data.get('specimenTypeCode', '').strip()
+        collection_method_code = form_data.get('collectionMethodCode', '').strip()
+        body_site_code = form_data.get('bodySiteCode', '').strip()
+        
+        # Lookup codes if not provided and we have display text
+        if specimen_type and not specimen_type_code:
+            specimen_type_code = lookup_snomed_code(
+                specimen_type, 
+                'https://healthterminologies.gov.au/fhir/ValueSet/specimen-type-1'
+            )
+            
+        if collection_method and not collection_method_code:
+            collection_method_code = lookup_snomed_code(
+                collection_method, 
+                'https://healthterminologies.gov.au/fhir/ValueSet/specimen-collection-procedure-1'
+            )
+            
+        if body_site and not body_site_code:
+            body_site_code = lookup_snomed_code(
+                body_site, 
+                'https://healthterminologies.gov.au/fhir/ValueSet/body-site-1'
+            )
+        
+        # Create specimen if at least specimen type is provided
+        if specimen_type:
+            specimen_id = str(uuid.uuid4())
+            
+            # Use provided collection datetime or current time
+            if not collection_datetime:
+                collection_datetime = get_localtime_bne()
+            else:
+                # Convert from datetime-local format to FHIR format
+                try:
+                    # Parse the datetime-local input (YYYY-MM-DDTHH:MM)
+                    dt = datetime.datetime.fromisoformat(collection_datetime)
+                    # Add timezone for Brisbane (UTC+10)
+                    collection_datetime = dt.strftime("%Y-%m-%dT%H:%M:%S.%f+10:00")
+                except ValueError:
+                    # Fallback to current time if parsing fails
+                    collection_datetime = get_localtime_bne()
+            
+            # Build specimen resource
+            specimen_resource = {
+                "resourceType": "Specimen",
+                "meta": {
+                    "profile": [
+                        "http://hl7.org.au/fhir/core/StructureDefinition/au-core-specimen"
+                    ]
+                },
+                "id": specimen_id,
+                "identifier": [{
+                    "use": "usual",
+                    "system": "http://myclinic.example.org.au/specimen-identifier",
+                    "value": f"SPEC-{requisition_number}"
+                }],
+                "status": "available",
+                "subject": patient_reference,
+                "receivedTime": collection_datetime
+            }
+            
+            # Add specimen type if provided
+            if specimen_type:
+                type_coding = {
+                    "coding": [{
+                        "system": "http://snomed.info/sct",
+                        "display": specimen_type
+                    }],
+                    "text": specimen_type
+                }
+                # Add code if available
+                if specimen_type_code:
+                    type_coding["coding"][0]["code"] = specimen_type_code
+                
+                specimen_resource["type"] = type_coding
+            
+            # Add collection details if provided
+            collection = {}
+            if collection_datetime:
+                collection["collectedDateTime"] = collection_datetime
+                
+            if collection_method:
+                method_coding = {
+                    "coding": [{
+                        "system": "http://snomed.info/sct",
+                        "display": collection_method
+                    }],
+                    "text": collection_method
+                }
+                # Add code if available
+                if collection_method_code:
+                    method_coding["coding"][0]["code"] = collection_method_code
+                
+                collection["method"] = method_coding
+                
+            if body_site:
+                site_coding = {
+                    "coding": [{
+                        "system": "http://snomed.info/sct", 
+                        "display": body_site
+                    }],
+                    "text": body_site
+                }
+                # Add code if available
+                if body_site_code:
+                    site_coding["coding"][0]["code"] = body_site_code
+                
+                collection["bodySite"] = site_coding
+            
+            if collection:
+                specimen_resource["collection"] = collection
+            
+            # Add narrative if requested
+            if form_data.get('addNarrative') == 'true':
+                specimen_resource["text"] = generate_narrative_text(specimen_resource)
+            
+            # Add specimen to bundle
+            transaction_bundle["entry"].append({
+                "fullUrl": f"urn:uuid:{specimen_id}",
+                "resource": specimen_resource,
+                "request": {
+                    "method": "POST",
+                    "url": "Specimen"
+                }
+            })
+            
+            # Create specimen reference for ServiceRequests
+            specimen_references.append({
+                "reference": f"urn:uuid:{specimen_id}",
+                "display": f"Specimen: {specimen_type}"
+            })
+    
     for i, test in enumerate(tests):
         sr_id = str(uuid.uuid4())
         encounter_id = str(uuid.uuid4())  # Generate unique encounter ID for each ServiceRequest
@@ -541,6 +780,10 @@ def create_request_bundle(form_data):
         # Add supportingInfo to ServiceRequest if we have any
         if supporting_info:
             service_request["supportingInfo"] = supporting_info
+        
+        # Add specimen references for pathology requests
+        if specimen_references and request_category == "Pathology":
+            service_request["specimen"] = specimen_references
                 
         # Add ServiceRequest to bundle
         transaction_bundle["entry"].append({

@@ -22,6 +22,12 @@ Additional features added in this repo
 
 ## 🛠️ Quickstart
 
+- I have hosted an instance on render so you can see it working (and for Connectathon'ers)
+
+```
+https://patient-dashboard-t065.onrender.com/
+```
+
 - To clone and run the original Davey Mason code...
 ```bash
 git clone https://github.com/daveymason/Patient-Dashboard-htmx-python-fhir.git

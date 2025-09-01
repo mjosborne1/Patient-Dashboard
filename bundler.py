@@ -18,6 +18,8 @@ import datetime
 import logging
 from json import dumps
 import ast
+import os
+from fhirutils import fhir_get
 import base64
 from fhirclient.models import bundle, servicerequest, patient, encounter, practitioner, practitionerrole
 from fhirclient.models import location, task, communicationrequest, consent, documentreference, coverage
@@ -146,7 +148,7 @@ def generate_narrative_text(resource):
         "div": narrative_text
     }
 
-def create_request_bundle(form_data):
+def create_request_bundle(form_data, fhir_server_url=None):
     """
     Creates a FHIR Transaction Bundle for diagnostic requests based on form data.
     
@@ -279,14 +281,81 @@ def create_request_bundle(form_data):
             "reference": f"PractitionerRole/{requester_id}"
         }
         
-        # Add PractitionerRole as a GET request in the bundle
-        transaction_bundle["entry"].append({
-            "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
-            "request": {
-                "method": "GET",
-                "url": f"PractitionerRole/{requester_id}"
-            }
-        })
+        # Fetch and add PractitionerRole resource to the bundle
+        try:
+            server_url = fhir_server_url or os.environ.get('FHIR_SERVER_URL', 'https://aucore.aidbox.beda.software/fhir')
+            response = fhir_get(f"/PractitionerRole/{requester_id}?_include=PractitionerRole:practitioner", 
+                              fhir_server_url=server_url, timeout=10)
+            if response.status_code == 200:
+                practitioner_role_data = response.json()
+                if practitioner_role_data.get('resourceType') == 'PractitionerRole':
+                    # Add PractitionerRole resource to bundle
+                    transaction_bundle["entry"].append({
+                        "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                        "resource": practitioner_role_data,
+                        "request": {
+                            "method": "PUT",
+                            "url": f"PractitionerRole/{requester_id}"
+                        }
+                    })
+                    
+                    # If the response includes a practitioner, add it too
+                    if practitioner_role_data.get('entry'):
+                        for entry in practitioner_role_data.get('entry', []):
+                            resource = entry.get('resource', {})
+                            if resource.get('resourceType') == 'Practitioner':
+                                practitioner_id = resource.get('id')
+                                transaction_bundle["entry"].append({
+                                    "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                                    "resource": resource,
+                                    "request": {
+                                        "method": "PUT",
+                                        "url": f"Practitioner/{practitioner_id}"
+                                    }
+                                })
+                elif practitioner_role_data.get('resourceType') == 'Bundle':
+                    # Handle bundle response with _include
+                    for entry in practitioner_role_data.get('entry', []):
+                        resource = entry.get('resource', {})
+                        if resource.get('resourceType') == 'PractitionerRole':
+                            transaction_bundle["entry"].append({
+                                "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                                "resource": resource,
+                                "request": {
+                                    "method": "PUT",
+                                    "url": f"PractitionerRole/{requester_id}"
+                                }
+                            })
+                        elif resource.get('resourceType') == 'Practitioner':
+                            practitioner_id = resource.get('id')
+                            transaction_bundle["entry"].append({
+                                "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                                "resource": resource,
+                                "request": {
+                                    "method": "PUT",
+                                    "url": f"Practitioner/{practitioner_id}"
+                                }
+                            })
+            else:
+                # If response status is not 200, fall back to GET request
+                print(f"Failed to fetch PractitionerRole {requester_id}, status: {response.status_code}")
+                transaction_bundle["entry"].append({
+                    "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                    "request": {
+                        "method": "GET",
+                        "url": f"PractitionerRole/{requester_id}"
+                    }
+                })
+        except Exception as e:
+            print(f"Failed to fetch PractitionerRole {requester_id}: {e}")
+            # Fall back to GET request if fetch fails
+            transaction_bundle["entry"].append({
+                "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                "request": {
+                    "method": "GET",
+                    "url": f"PractitionerRole/{requester_id}"
+                }
+            })
     
     # Create and add reference to Organization (if provided)
     organization_reference = None
@@ -806,7 +875,10 @@ def create_request_bundle(form_data):
                 }],
                 "text": billing_category_mapping.get(bill_type, bill_type)
             },
-            "beneficiary": patient_reference
+            "beneficiary": patient_reference,
+            "payor": [{
+                "display": billing_category_mapping.get(bill_type, bill_type)
+            }]
         }
         
         # Add Coverage to bundle

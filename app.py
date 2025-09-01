@@ -870,7 +870,7 @@ def create_diagnostic_request_bundle(patient_id):
 
     #with open('./json/service_request_bundle.json', 'r', encoding='utf-8') as f:
     #    bundle = json.load(f)
-    bundle = create_request_bundle(form_data=form_data)
+    bundle = create_request_bundle(form_data=form_data, fhir_server_url=get_fhir_server_url())
     bundle_json = json.dumps(bundle, indent=2)
     return render_template('partials/json_textarea.html', bundle_json=bundle_json), 200
 

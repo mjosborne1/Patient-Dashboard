@@ -659,6 +659,7 @@ def create_request_bundle(form_data, fhir_server_url=None):
             "for": patient_reference,
             # supportingInfo goes here
             "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
+            "owner": organization_reference if organization_reference else {"reference": "Organization/unknown"},
             "partOf": [{
                 "reference": f"urn:uuid:{group_task_id}"
             }],
@@ -708,6 +709,7 @@ def create_request_bundle(form_data, fhir_server_url=None):
             "description": f"{request_category} Order Group",
             "for": patient_reference,
             "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
+            "owner": organization_reference if organization_reference else {"reference": "Organization/unknown"},
             "authoredOn": get_localtime_bne()
         }
             

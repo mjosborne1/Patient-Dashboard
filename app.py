@@ -571,6 +571,9 @@ def get_organisation_by_type(org_type):
     bundle = response.json()
     entries = bundle.get('entry', [])
     organisations = []
+    # For testing SNP orders
+    snp_pathology = { "id": "05030000-ac10-0242-f1b3-08dde8e839a8", "name": "Sullivan Nicolaides Pathology" }
+    organisations.append(snp_pathology)
     for entry in entries:
         resource = entry.get('resource', {})
         org_id = resource.get('id', '')

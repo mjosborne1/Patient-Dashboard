@@ -1008,7 +1008,7 @@
                     ],
                     "tag": [
                         {
-                            "system": "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-tag",
+                            "system": "http://terminology.hl7.org.au/CodeSystem/resource-tag",
                             "code": "fulfilment-task-group"
                         }
                     ]
@@ -1090,7 +1090,7 @@
                     ],
                     "tag": [
                         {
-                            "system": "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-tag",
+                            "system": "http://terminology.hl7.org.au/CodeSystem/resource-tag",
                             "code": "fulfilment-task"
                         }
                     ]
@@ -1176,7 +1176,7 @@
                     ],
                     "tag": [
                         {
-                            "system": "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-tag",
+                            "system": "http://terminology.hl7.org.au/CodeSystem/resource-tag",
                             "code": "fulfilment-task"
                         }
                     ]
@@ -1259,7 +1259,7 @@
                 "meta": {
                     "tag": [
                         {
-                            "system": "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-tag",
+                            "system": "http://terminology.hl7.org.au/CodeSystem/resource-tag",
                             "code": "fulfilment-task"
                         }
                     ],

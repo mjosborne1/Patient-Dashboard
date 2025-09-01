@@ -633,7 +633,7 @@ def create_request_bundle(form_data, fhir_server_url=None):
                 ],
                 "tag": [
                     {
-                        "system": "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-tag",
+                        "system": "http://terminology.hl7.org.au/CodeSystem/resource-tag",
                         "code": "fulfilment-task"
                     }
                 ]
@@ -686,7 +686,7 @@ def create_request_bundle(form_data, fhir_server_url=None):
                 ],
                 "tag": [
                     {
-                        "system": "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-tag",
+                        "system": "http://terminology.hl7.org.au/CodeSystem/resource-tag",
                         "code": "fulfilment-task-group"
                     }
                 ]

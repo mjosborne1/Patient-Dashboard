@@ -7,12 +7,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Pipfile and Pipfile.lock
-COPY Pipfile Pipfile.lock ./
+# Copy requirements file first
+COPY requirements.txt .
 
-# Install pipenv and dependencies
+# Install pipenv and dependencies from requirements.txt
 RUN pip install --no-cache-dir pipenv && \
-    pipenv install --deploy --system && \
+    pipenv install -r requirements.txt && \
+    pipenv requirements > requirements.frozen.txt && \
+    pip install -r requirements.frozen.txt && \
     pip uninstall -y pipenv virtualenv-clone virtualenv
 
 # Copy application code

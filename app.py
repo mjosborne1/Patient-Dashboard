@@ -572,8 +572,10 @@ def get_organisation_by_type(org_type):
     entries = bundle.get('entry', [])
     organisations = []
     # For testing SNP orders on pyro server
-    snp_pathology = { "id": "05030000-ac10-0242-f1b3-08dde8e839a8", "name": "Sullivan Nicolaides Pathology" }
+    snp_pathology = { "id": "05030000-ac10-0242-f1b3-08dde8e839a8", "name": "Sullivan Nicolaides Pathology" }    
+    qxr_radiology = { "id": "05030000-ac10-0242-030b-08dde9b69fcf", "name": "Queensland X-Ray" } 
     organisations.append(snp_pathology)
+    organisations.append(qxr_radiology)
     for entry in entries:
         resource = entry.get('resource', {})
         org_id = resource.get('id', '')

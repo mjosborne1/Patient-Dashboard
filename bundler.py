@@ -376,7 +376,7 @@ def create_request_bundle(form_data, fhir_server_url=None):
     # Generate a unique requisition number for this order (8 digits starting with current year)
     current_year = datetime.datetime.now().year % 100  # Get last 2 digits of year (e.g., 25 for 2025)
     import random
-    requisition_number = f"{current_year:02d}{random.randint(100000, 999999)}"
+    requisition_number = f"{current_year:02d}-{random.randint(100000, 999999)}"
     logging.info(f"Generated requisition number: {requisition_number}")
     
     # Generate task group ID early so individual tasks can reference it
@@ -802,7 +802,7 @@ def create_request_bundle(form_data, fhir_server_url=None):
                 })
     
     # Add Consent (MHR Consent Withdrawal) if user opted out
-    consent_opt_out = form_data.get('mhrOptOut', False)
+    consent_opt_out = form_data.get('mhrConsentWithdrawn', False)
     if consent_opt_out:
         consent_id = str(uuid.uuid4())
         consent = {

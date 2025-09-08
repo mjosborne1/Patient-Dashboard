@@ -475,6 +475,67 @@ def create_request_bundle(form_data, fhir_server_url=None):
             }
         })
     
+    # Get request status and status reason from form data
+    request_status = form_data.get('requestStatus', 'active')  # Default to 'active'
+    status_reason = form_data.get('statusReason', '').strip()
+    
+    # Get fasting status from form data
+    fasting_status = form_data.get('fastingStatus', 'Non-fasting')  # Default to 'Non-fasting'
+    
+    # Get request priority from form data
+    request_priority = form_data.get('requestPriority', 'routine')  # Default to 'routine'
+    
+    # Create Coverage resource if billing category is provided
+    coverage_id = None
+    coverage_reference = None
+    bill_type = form_data.get('billingCategory', '')
+    if bill_type:
+        # Map billing category codes to their display text
+        billing_category_mapping = {
+            'PUBLICPOL': 'Medicare',
+            'VET': 'Department of Veterans\' Affairs',
+            'pay': 'Private Pay',
+            'payconc': 'Private Pay with Concession',
+            'AUPUBHOSP': 'Public Hospital',
+            'WCBPOL': 'Workers\' Compensation'
+        }
+        
+        coverage_id = str(uuid.uuid4())
+        coverage_reference = {
+            "reference": f"urn:uuid:{coverage_id}"
+        }
+        
+        coverage = {
+            "resourceType": "Coverage",
+            "meta": {
+                "profile": [
+                    "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-coverage"
+                ]
+            },
+            "id": coverage_id,
+            "status": "active",
+            "type": {
+                "coding": [{
+                    "code": bill_type
+                }],
+                "text": billing_category_mapping.get(bill_type, bill_type)
+            },
+            "beneficiary": patient_reference,
+            "payor": [{
+                "display": billing_category_mapping.get(bill_type, bill_type)
+            }]
+        }
+        
+        # Add Coverage to bundle
+        transaction_bundle["entry"].append({
+            "fullUrl": f"urn:uuid:{coverage_id}",
+            "resource": coverage,
+            "request": {
+                "method": "POST",
+                "url": "Coverage"
+            }
+        })
+    
     # Create a ServiceRequest for each test
     service_requests = []
     for i, test in enumerate(tests):
@@ -515,8 +576,23 @@ def create_request_bundle(form_data, fhir_server_url=None):
                 {
                     "url": "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-displaysequence",
                     "valueInteger": test.get("display_sequence",1)
+                },
+                {
+                    "url": "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-fastingprecondition",
+                    "valueCodeableConcept": {
+                        "coding": [{
+                            "system": "http://snomed.info/sct",
+                            "code": "16985007" if fasting_status == "Fasting" else "276330003",
+                            "display": "Fasting" if fasting_status == "Fasting" else "Non-fasting"
+                        }]
+                    }
                 }
-            ],
+            ] + ([{
+                "url": "http://hl7.org/fhir/StructureDefinition/request-statusReason",
+                "valueCodeableConcept": {
+                    "text": status_reason
+                }
+            }] if request_status == "on-hold" and status_reason else []),
             "id": sr_id,
             "identifier": [{
                 "use": "usual",
@@ -530,7 +606,7 @@ def create_request_bundle(form_data, fhir_server_url=None):
                 "system": "http://myclinic.example.org.au/identifier",
                 "value": f"{requisition_number}-{test.get('display_sequence', 1)}"
             }],
-            "status": "active",
+            "status": request_status,
             "intent": "order",
             "requisition": {
                 "use": "usual",
@@ -564,8 +640,13 @@ def create_request_bundle(form_data, fhir_server_url=None):
                 "reference": f"#{encounter_id}",
                 "type": "Encounter"
             },
-            "authoredOn": get_localtime_bne()
+            "authoredOn": get_localtime_bne(),
+            "priority": request_priority
         }
+        
+        # Add insurance reference if Coverage is available
+        if coverage_reference:
+            service_request["insurance"] = [coverage_reference]
         
         # Add requester if available
         if practitioner_reference:
@@ -848,51 +929,6 @@ def create_request_bundle(form_data, fhir_server_url=None):
             }
         })
         
-    # Add Coverage as contained resource if provided
-    bill_type = form_data.get('billingCategory', '')
-    if bill_type:
-        # Map billing category codes to their display text
-        billing_category_mapping = {
-            'PUBLICPOL': 'Medicare',
-            'VET': 'Department of Veterans\' Affairs',
-            'pay': 'Private Pay',
-            'payconc': 'Private Pay with Concession',
-            'AUPUBHOSP': 'Public Hospital',
-            'WCBPOL': 'Workers\' Compensation'
-        }
-        
-        coverage_id = str(uuid.uuid4())
-        coverage = {
-            "resourceType": "Coverage",
-            "meta": {
-                "profile": [
-                    "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-coverage"
-                ]
-            },
-            "id": coverage_id,
-            "status": "active",
-            "type": {
-                "coding": [{
-                    "code": bill_type
-                }],
-                "text": billing_category_mapping.get(bill_type, bill_type)
-            },
-            "beneficiary": patient_reference,
-            "payor": [{
-                "display": billing_category_mapping.get(bill_type, bill_type)
-            }]
-        }
-        
-        # Add Coverage to bundle
-        transaction_bundle["entry"].append({
-            "fullUrl": f"urn:uuid:{coverage_id}",
-            "resource": coverage,
-            "request": {
-                "method": "POST",
-                "url": "Coverage"
-            }
-        })
-    
     # Add narratives to all resources if requested
     add_narrative = form_data.get('addNarrative', False)
     if add_narrative:

@@ -1126,7 +1126,7 @@ def basic_auth_login():
     else:
         return jsonify({'success': False, 'error': 'Invalid login code or password'}), 401
 
-if __name__ == '__main__':
+if __name__ == '__main__' and os.environ.get('TESTING') != 'true':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     port = int(os.environ.get('PORT', 5001))
     # Bind to all interfaces to ensure localhost works on macOS

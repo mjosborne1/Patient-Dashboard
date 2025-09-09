@@ -18,6 +18,8 @@ import datetime
 import logging
 from json import dumps
 import ast
+import os
+from fhirutils import fhir_get
 import base64
 import requests
 from fhirclient.models import bundle, servicerequest, patient, encounter, practitioner, practitionerrole
@@ -241,7 +243,7 @@ def generate_narrative_text(resource):
         "div": narrative_text
     }
 
-def create_request_bundle(form_data):
+def create_request_bundle(form_data, fhir_server_url=None):
     """
     Creates a FHIR Transaction Bundle for diagnostic requests based on form data.
     
@@ -374,14 +376,81 @@ def create_request_bundle(form_data):
             "reference": f"PractitionerRole/{requester_id}"
         }
         
-        # Add PractitionerRole as a GET request in the bundle
-        transaction_bundle["entry"].append({
-            "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
-            "request": {
-                "method": "GET",
-                "url": f"PractitionerRole/{requester_id}"
-            }
-        })
+        # Fetch and add PractitionerRole resource to the bundle
+        try:
+            server_url = fhir_server_url or os.environ.get('FHIR_SERVER_URL', 'https://aucore.aidbox.beda.software/fhir')
+            response = fhir_get(f"/PractitionerRole/{requester_id}?_include=PractitionerRole:practitioner", 
+                              fhir_server_url=server_url, timeout=10)
+            if response.status_code == 200:
+                practitioner_role_data = response.json()
+                if practitioner_role_data.get('resourceType') == 'PractitionerRole':
+                    # Add PractitionerRole resource to bundle
+                    transaction_bundle["entry"].append({
+                        "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                        "resource": practitioner_role_data,
+                        "request": {
+                            "method": "PUT",
+                            "url": f"PractitionerRole/{requester_id}"
+                        }
+                    })
+                    
+                    # If the response includes a practitioner, add it too
+                    if practitioner_role_data.get('entry'):
+                        for entry in practitioner_role_data.get('entry', []):
+                            resource = entry.get('resource', {})
+                            if resource.get('resourceType') == 'Practitioner':
+                                practitioner_id = resource.get('id')
+                                transaction_bundle["entry"].append({
+                                    "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                                    "resource": resource,
+                                    "request": {
+                                        "method": "PUT",
+                                        "url": f"Practitioner/{practitioner_id}"
+                                    }
+                                })
+                elif practitioner_role_data.get('resourceType') == 'Bundle':
+                    # Handle bundle response with _include
+                    for entry in practitioner_role_data.get('entry', []):
+                        resource = entry.get('resource', {})
+                        if resource.get('resourceType') == 'PractitionerRole':
+                            transaction_bundle["entry"].append({
+                                "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                                "resource": resource,
+                                "request": {
+                                    "method": "PUT",
+                                    "url": f"PractitionerRole/{requester_id}"
+                                }
+                            })
+                        elif resource.get('resourceType') == 'Practitioner':
+                            practitioner_id = resource.get('id')
+                            transaction_bundle["entry"].append({
+                                "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                                "resource": resource,
+                                "request": {
+                                    "method": "PUT",
+                                    "url": f"Practitioner/{practitioner_id}"
+                                }
+                            })
+            else:
+                # If response status is not 200, fall back to GET request
+                print(f"Failed to fetch PractitionerRole {requester_id}, status: {response.status_code}")
+                transaction_bundle["entry"].append({
+                    "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                    "request": {
+                        "method": "GET",
+                        "url": f"PractitionerRole/{requester_id}"
+                    }
+                })
+        except Exception as e:
+            print(f"Failed to fetch PractitionerRole {requester_id}: {e}")
+            # Fall back to GET request if fetch fails
+            transaction_bundle["entry"].append({
+                "fullUrl": f"urn:uuid:{str(uuid.uuid4())}",
+                "request": {
+                    "method": "GET",
+                    "url": f"PractitionerRole/{requester_id}"
+                }
+            })
     
     # Create and add reference to Organization (if provided)
     organization_reference = None
@@ -402,7 +471,7 @@ def create_request_bundle(form_data):
     # Generate a unique requisition number for this order (8 digits starting with current year)
     current_year = datetime.datetime.now().year % 100  # Get last 2 digits of year (e.g., 25 for 2025)
     import random
-    requisition_number = f"{current_year:02d}{random.randint(100000, 999999)}"
+    requisition_number = f"{current_year:02d}-{random.randint(100000, 999999)}"
     logging.info(f"Generated requisition number: {requisition_number}")
     
     # Generate task group ID early so individual tasks can reference it
@@ -498,6 +567,67 @@ def create_request_bundle(form_data):
             "request": {
                 "method": "POST",
                 "url": "DocumentReference"
+            }
+        })
+    
+    # Get request status and status reason from form data
+    request_status = form_data.get('requestStatus', 'active')  # Default to 'active'
+    status_reason = form_data.get('statusReason', '').strip()
+    
+    # Get fasting status from form data
+    fasting_status = form_data.get('fastingStatus', 'Non-fasting')  # Default to 'Non-fasting'
+    
+    # Get request priority from form data
+    request_priority = form_data.get('requestPriority', 'routine')  # Default to 'routine'
+    
+    # Create Coverage resource if billing category is provided
+    coverage_id = None
+    coverage_reference = None
+    bill_type = form_data.get('billingCategory', '')
+    if bill_type:
+        # Map billing category codes to their display text
+        billing_category_mapping = {
+            'PUBLICPOL': 'Medicare',
+            'VET': 'Department of Veterans\' Affairs',
+            'pay': 'Private Pay',
+            'payconc': 'Private Pay with Concession',
+            'AUPUBHOSP': 'Public Hospital',
+            'WCBPOL': 'Workers\' Compensation'
+        }
+        
+        coverage_id = str(uuid.uuid4())
+        coverage_reference = {
+            "reference": f"urn:uuid:{coverage_id}"
+        }
+        
+        coverage = {
+            "resourceType": "Coverage",
+            "meta": {
+                "profile": [
+                    "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-coverage"
+                ]
+            },
+            "id": coverage_id,
+            "status": "active",
+            "type": {
+                "coding": [{
+                    "code": bill_type
+                }],
+                "text": billing_category_mapping.get(bill_type, bill_type)
+            },
+            "beneficiary": patient_reference,
+            "payor": [{
+                "display": billing_category_mapping.get(bill_type, bill_type)
+            }]
+        }
+        
+        # Add Coverage to bundle
+        transaction_bundle["entry"].append({
+            "fullUrl": f"urn:uuid:{coverage_id}",
+            "resource": coverage,
+            "request": {
+                "method": "POST",
+                "url": "Coverage"
             }
         })
     
@@ -685,8 +815,23 @@ def create_request_bundle(form_data):
                 {
                     "url": "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-displaysequence",
                     "valueInteger": test.get("display_sequence",1)
+                },
+                {
+                    "url": "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-fastingprecondition",
+                    "valueCodeableConcept": {
+                        "coding": [{
+                            "system": "http://snomed.info/sct",
+                            "code": "16985007" if fasting_status == "Fasting" else "276330003",
+                            "display": "Fasting" if fasting_status == "Fasting" else "Non-fasting"
+                        }]
+                    }
                 }
-            ],
+            ] + ([{
+                "url": "http://hl7.org/fhir/StructureDefinition/request-statusReason",
+                "valueCodeableConcept": {
+                    "text": status_reason
+                }
+            }] if request_status == "on-hold" and status_reason else []),
             "id": sr_id,
             "identifier": [{
                 "use": "usual",
@@ -700,7 +845,7 @@ def create_request_bundle(form_data):
                 "system": "http://myclinic.example.org.au/identifier",
                 "value": f"{requisition_number}-{test.get('display_sequence', 1)}"
             }],
-            "status": "active",
+            "status": request_status,
             "intent": "order",
             "requisition": {
                 "use": "usual",
@@ -734,8 +879,13 @@ def create_request_bundle(form_data):
                 "reference": f"#{encounter_id}",
                 "type": "Encounter"
             },
-            "authoredOn": get_localtime_bne()
+            "authoredOn": get_localtime_bne(),
+            "priority": request_priority
         }
+        
+        # Add insurance reference if Coverage is available
+        if coverage_reference:
+            service_request["insurance"] = [coverage_reference]
         
         # Add requester if available
         if practitioner_reference:
@@ -807,7 +957,7 @@ def create_request_bundle(form_data):
                 ],
                 "tag": [
                     {
-                        "system": "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-tag",
+                        "system": "http://terminology.hl7.org.au/CodeSystem/resource-tag",
                         "code": "fulfilment-task"
                     }
                 ]
@@ -833,6 +983,7 @@ def create_request_bundle(form_data):
             "for": patient_reference,
             # supportingInfo goes here
             "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
+            "owner": organization_reference if organization_reference else {"reference": "Organization/unknown"},
             "partOf": [{
                 "reference": f"urn:uuid:{group_task_id}"
             }],
@@ -859,7 +1010,7 @@ def create_request_bundle(form_data):
                 ],
                 "tag": [
                     {
-                        "system": "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-tag",
+                        "system": "http://terminology.hl7.org.au/CodeSystem/resource-tag",
                         "code": "fulfilment-task-group"
                     }
                 ]
@@ -882,6 +1033,7 @@ def create_request_bundle(form_data):
             "description": f"{request_category} Order Group",
             "for": patient_reference,
             "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
+            "owner": organization_reference if organization_reference else {"reference": "Organization/unknown"},
             "authoredOn": get_localtime_bne()
         }
             
@@ -974,7 +1126,7 @@ def create_request_bundle(form_data):
                 })
     
     # Add Consent (MHR Consent Withdrawal) if user opted out
-    consent_opt_out = form_data.get('mhrOptOut', False)
+    consent_opt_out = form_data.get('mhrConsentWithdrawn', False)
     if consent_opt_out:
         consent_id = str(uuid.uuid4())
         consent = {
@@ -1020,48 +1172,6 @@ def create_request_bundle(form_data):
             }
         })
         
-    # Add Coverage as contained resource if provided
-    bill_type = form_data.get('billingCategory', '')
-    if bill_type:
-        # Map billing category codes to their display text
-        billing_category_mapping = {
-            'PUBLICPOL': 'Medicare',
-            'VET': 'Department of Veterans\' Affairs',
-            'pay': 'Private Pay',
-            'payconc': 'Private Pay with Concession',
-            'AUPUBHOSP': 'Public Hospital',
-            'WCBPOL': 'Workers\' Compensation'
-        }
-        
-        coverage_id = str(uuid.uuid4())
-        coverage = {
-            "resourceType": "Coverage",
-            "meta": {
-                "profile": [
-                    "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-coverage"
-                ]
-            },
-            "id": coverage_id,
-            "status": "active",
-            "type": {
-                "coding": [{
-                    "code": bill_type
-                }],
-                "text": billing_category_mapping.get(bill_type, bill_type)
-            },
-            "beneficiary": patient_reference
-        }
-        
-        # Add Coverage to bundle
-        transaction_bundle["entry"].append({
-            "fullUrl": f"urn:uuid:{coverage_id}",
-            "resource": coverage,
-            "request": {
-                "method": "POST",
-                "url": "Coverage"
-            }
-        })
-    
     # Add narratives to all resources if requested
     add_narrative = form_data.get('addNarrative', False)
     if add_narrative:

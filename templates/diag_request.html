@@ -217,6 +217,29 @@
               <label class="form-check-label" for="fasting">Fasting</label>
             </div>
           </div>
+          <!-- Request priority routine | urgent | asap | stat , default to routine -->
+          <div class="mb-3 mt-3">
+            <label class="form-label" id="priorityLabel">Request Priority</label>
+            <div role="radiogroup" aria-labelledby="priorityLabel">
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="requestPriority" id="routinePriority" value="routine" checked>
+                <label class="form-check-label" for="routinePriority">Routine</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="requestPriority" id="urgentPriority" value="urgent">
+                <label class="form-check-label" for="urgentPriority">Urgent</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="requestPriority" id="asapPriority" value="asap">
+                <label class="form-check-label" for="asapPriority">ASAP</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="requestPriority" id="statPriority" value="stat">
+                <label class="form-check-label" for="statPriority">STAT</label>
+              </div>
+            </div>
+          </div>
+           
         <!-- Pregnancy status-->
         <div class="mb-3 mt-3">
           <div class="form-check-group">          
@@ -240,6 +263,26 @@
               </label>
             </div>
           </div>
+        </div>
+        <!-- Request Status -->
+        <div class="mb-3 mt-3">
+          <label class="form-label" id="requestStatusLabel">Request Status</label>
+          <div role="radiogroup" aria-labelledby="requestStatusLabel">
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="requestStatus" id="requestStatusActive" value="active" checked>
+              <label class="form-check-label" for="requestStatusActive">Active</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="requestStatus" id="requestStatusOnHold" value="on-hold">
+              <label class="form-check-label" for="requestStatusOnHold">On-Hold</label>
+            </div>
+          </div>
+        </div>
+        <!-- Status Reason (only shown when status is on-hold) -->
+        <div class="mb-3 mt-3" id="statusReasonContainer" style="display: none;">
+          <label for="statusReason" class="form-label">Status Reason</label>
+          <textarea class="form-control" id="statusReason" name="statusReason" rows="2" placeholder="Enter reason for putting request on hold..."></textarea>
+          <div class="form-text">Explain why this request is being placed on hold</div>
         </div>
         <!-- Billing category -->
         <div class="mb-3 mt-3">
@@ -637,6 +680,26 @@ document.getElementById('copyToPractitioner').addEventListener('keydown', functi
     }
 });
 
+// Handle Request Status toggle to show/hide status reason field
+function updateStatusReasonVisibility() {
+    const onHoldRadio = document.getElementById('requestStatusOnHold');
+    const statusReasonContainer = document.getElementById('statusReasonContainer');
+    const statusReasonField = document.getElementById('statusReason');
+    
+    if (onHoldRadio.checked) {
+        statusReasonContainer.style.display = 'block';
+        statusReasonField.required = true;
+    } else {
+        statusReasonContainer.style.display = 'none';
+        statusReasonField.required = false;
+        statusReasonField.value = ''; // Clear the field when hiding
+    }
+}
+
+// Attach event listeners to Request Status radios
+document.getElementById('requestStatusActive').addEventListener('change', updateStatusReasonVisibility);
+document.getElementById('requestStatusOnHold').addEventListener('change', updateStatusReasonVisibility);
+
 // Reset selectedTests and selectedReasons when the modal is opened
 document.getElementById('createDiagnosticRequestModal').addEventListener('shown.bs.modal', function () {
   // initialise Provider list
@@ -658,6 +721,11 @@ document.getElementById('createDiagnosticRequestModal').addEventListener('shown.
     document.getElementById('testName').value = '';
     document.getElementById('reason').value = '';
     document.getElementById('copyToPractitioner').value = '';
+    
+    // Reset request status to active and hide status reason field
+    document.getElementById('requestStatusActive').checked = true;
+    document.getElementById('requestStatusOnHold').checked = false;
+    updateStatusReasonVisibility();
     
     // Clear specimen fields
     document.getElementById('specimenType').value = '';

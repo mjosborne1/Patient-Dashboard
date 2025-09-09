@@ -571,6 +571,11 @@ def get_organisation_by_type(org_type):
     bundle = response.json()
     entries = bundle.get('entry', [])
     organisations = []
+    # For testing SNP orders on pyro server
+    snp_pathology = { "id": "05030000-ac10-0242-f1b3-08dde8e839a8", "name": "Sullivan Nicolaides Pathology" }    
+    qxr_radiology = { "id": "05030000-ac10-0242-030b-08dde9b69fcf", "name": "Queensland X-Ray" } 
+    organisations.append(snp_pathology)
+    organisations.append(qxr_radiology)
     for entry in entries:
         resource = entry.get('resource', {})
         org_id = resource.get('id', '')
@@ -870,7 +875,7 @@ def create_diagnostic_request_bundle(patient_id):
 
     #with open('./json/service_request_bundle.json', 'r', encoding='utf-8') as f:
     #    bundle = json.load(f)
-    bundle = create_request_bundle(form_data=form_data)
+    bundle = create_request_bundle(form_data=form_data, fhir_server_url=get_fhir_server_url())
     bundle_json = json.dumps(bundle, indent=2)
     return render_template('partials/json_textarea.html', bundle_json=bundle_json), 200
 
@@ -1238,7 +1243,7 @@ def basic_auth_login():
     else:
         return jsonify({'success': False, 'error': 'Invalid login code or password'}), 401
 
-if __name__ == '__main__':
+if __name__ == '__main__' and os.environ.get('TESTING') != 'true':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     port = int(os.environ.get('PORT', 5001))
     # Bind to all interfaces to ensure localhost works on macOS

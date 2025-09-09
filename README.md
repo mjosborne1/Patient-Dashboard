@@ -13,6 +13,7 @@ A modern Flask app for exploring patient data from a FHIR API, using [HTMX](http
 - **Stats & Insights** – Visualize patient demographics and trends.
 - **Profile & Logout** – Manage your session with a click.
 - **Smooth Transitions** – No full page reloads, thanks to HTMX.
+
 Additional features added in this repo
 - **Settings** to choose a server to pull from
 - **PatientSummary** $summary bundles to text area for use in IG examples
@@ -20,6 +21,12 @@ Additional features added in this repo
 ---
 
 ## 🛠️ Quickstart
+
+- I have hosted an instance on render so you can see it working (and for Connectathon'ers)
+
+```
+https://patient-dashboard-t065.onrender.com/
+```
 
 - To clone and run the original Davey Mason code...
 ```bash

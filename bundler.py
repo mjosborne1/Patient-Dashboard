@@ -692,7 +692,7 @@ def create_request_bundle(form_data, fhir_server_url=None):
                 "resourceType": "Specimen",
                 "meta": {
                     "profile": [
-                        "http://hl7.org.au/fhir/core/StructureDefinition/au-core-specimen"
+                        "http://hl7.org.au/fhir/StructureDefinition/au-specimen"
                     ]
                 },
                 "id": specimen_id,
@@ -702,8 +702,7 @@ def create_request_bundle(form_data, fhir_server_url=None):
                     "value": f"SPEC-{requisition_number}"
                 }],
                 "status": "available",
-                "subject": patient_reference,
-                "receivedTime": collection_datetime
+                "subject": patient_reference
             }
             
             # Add specimen type if provided

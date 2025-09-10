@@ -83,6 +83,10 @@
                 <small class="text-muted">Searching...</small>
             </div>
             
+            <!-- Hidden field to store selected tests as tags -->
+            <input type="hidden" id="selectedTests" name="selectedTests">
+            <div id="selectedTestsDisplay" class="mt-2"></div>
+            
             <!-- Specimen Collection Checkbox (shown only for Pathology) -->
             <div id="specimenCheckboxSection" class="mb-3" style="display: none;">
                 <div class="form-check">
@@ -199,10 +203,6 @@
                 </div>
               </div>
             </div>
-          </div>
-             <!-- Hidden field to store selected tests as tags -->
-            <input type="hidden" id="selectedTests" name="selectedTests">
-            <div id="selectedTestsDisplay" class="mt-2"></div>
           </div>
           <!--Non-fasting/fasting default to non-fasting-->
           <div class="mb-3 mt-3">

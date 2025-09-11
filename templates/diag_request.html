@@ -82,10 +82,127 @@
             <div id="testName-indicator" class="htmx-indicator">
                 <small class="text-muted">Searching...</small>
             </div>
-
-             <!-- Hidden field to store selected tests as tags -->
+            
+            <!-- Hidden field to store selected tests as tags -->
             <input type="hidden" id="selectedTests" name="selectedTests">
             <div id="selectedTestsDisplay" class="mt-2"></div>
+            
+            <!-- Specimen Collection Checkbox (shown only for Pathology) -->
+            <div id="specimenCheckboxSection" class="mb-3" style="display: none;">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="specimenCollected" name="specimenCollected" value="true">
+                    <label class="form-check-label" for="specimenCollected">
+                        <strong>Specimen collected?</strong>
+                    </label>
+                    <div class="form-text">Check this box if a specimen was collected for this pathology request.</div>
+                </div>
+            </div>
+            
+            <!-- If Pathology is requested add the option to include a Specimen resource in the bundle. Include Specimen type,
+                  collection method and body site
+                  e.g. Specimen.type = Swab,
+                       Specimen.collection.method = 285570007|Taking of swab| ,
+                       Specimen.collection.bodySite = 48979004 | Left lower leg |
+             Ensure the Specimen type is selected from the https://healthterminologies.gov.au/fhir/ValueSet/specimen-type-1 ValueSet, 
+             Collection procedure is selected from https://healthterminologies.gov.au/fhir/ValueSet/specimen-collection-procedure-1
+             and site is selected from https://healthterminologies.gov.au/fhir/ValueSet/body-site-1
+             collectedDateTime can be the current date time.
+          --> 
+          <!-- Specimen Collection Section (shown only for Pathology) -->
+          <div id="specimenSection" class="mb-3" style="display: none;">
+            <label class="form-label">Specimen Collection Details</label>
+            <div class="card p-3">
+              <div class="row">
+                <!-- Specimen Type -->
+                <div class="col-md-4 mb-3">
+                  <label for="specimenType" class="form-label">Specimen Type</label>
+                  <input 
+                    type="search" 
+                    class="form-control" 
+                    id="specimenType" 
+                    name="specimenType" 
+                    placeholder="e.g. Blood, Urine, Swab..." 
+                    autocomplete="off"
+                    hx-get="/fhir/specimentype/expand"
+                    hx-trigger="input changed delay:500ms"
+                    hx-target="#specimenTypeList"
+                    hx-swap="innerHTML"
+                    hx-indicator="#specimenType-indicator"
+                    list="specimenTypeList"
+                  >
+                  <datalist id="specimenTypeList"></datalist>
+                  <div id="specimenType-indicator" class="htmx-indicator">
+                    <small class="text-muted">Searching...</small>
+                  </div>
+                  <input type="hidden" id="specimenTypeCode" name="specimenTypeCode">
+                  <input type="hidden" id="specimenTypeDisplay" name="specimenTypeDisplay">
+                </div>
+                
+                <!-- Collection Method -->
+                <div class="col-md-4 mb-3">
+                  <label for="collectionMethod" class="form-label">Collection Method</label>
+                  <input 
+                    type="search" 
+                    class="form-control" 
+                    id="collectionMethod" 
+                    name="collectionMethod" 
+                    placeholder="e.g. Venipuncture, Swab..." 
+                    autocomplete="off"
+                    hx-get="/fhir/collectionmethod/expand"
+                    hx-trigger="input changed delay:500ms"
+                    hx-target="#collectionMethodList"
+                    hx-swap="innerHTML"
+                    hx-indicator="#collectionMethod-indicator"
+                    list="collectionMethodList"
+                  >
+                  <datalist id="collectionMethodList"></datalist>
+                  <div id="collectionMethod-indicator" class="htmx-indicator">
+                    <small class="text-muted">Searching...</small>
+                  </div>
+                  <input type="hidden" id="collectionMethodCode" name="collectionMethodCode">
+                  <input type="hidden" id="collectionMethodDisplay" name="collectionMethodDisplay">
+                </div>
+                
+                <!-- Body Site -->
+                <div class="col-md-4 mb-3">
+                  <label for="bodySite" class="form-label">Body Site</label>
+                  <input 
+                    type="search" 
+                    class="form-control" 
+                    id="bodySite" 
+                    name="bodySite" 
+                    placeholder="e.g. Left arm, Throat..." 
+                    autocomplete="off"
+                    hx-get="/fhir/bodysite/expand"
+                    hx-trigger="input changed delay:500ms"
+                    hx-target="#bodySiteList"
+                    hx-swap="innerHTML"
+                    hx-indicator="#bodySite-indicator"
+                    list="bodySiteList"
+                  >
+                  <datalist id="bodySiteList"></datalist>
+                  <div id="bodySite-indicator" class="htmx-indicator">
+                    <small class="text-muted">Searching...</small>
+                  </div>
+                  <input type="hidden" id="bodySiteCode" name="bodySiteCode">
+                  <input type="hidden" id="bodySiteDisplay" name="bodySiteDisplay">
+                </div>
+              </div>
+              
+              <!-- Collection Date/Time -->
+              <div class="row">
+                <div class="col-md-6 mb-3">
+                  <label for="collectionDateTime" class="form-label">Collection Date & Time</label>
+                  <input 
+                    type="datetime-local" 
+                    class="form-control" 
+                    id="collectionDateTime" 
+                    name="collectionDateTime"
+                  >
+                  <div class="form-text">Leave blank to use current date/time</div>
+                </div>
+              </div>
+            </div>
           </div>
           <!--Non-fasting/fasting default to non-fasting-->
           <div class="mb-3 mt-3">
@@ -487,12 +604,27 @@ function updateProviderDropdown() {
     const pathologyRadio = document.getElementById('pathologyRequest');
     const radiologyRadio = document.getElementById('radiologyRequest');
     const orgList = document.getElementById('organisationList');
+    const specimenSection = document.getElementById('specimenSection');
+    const specimenCheckboxSection = document.getElementById('specimenCheckboxSection');
     let snomedCode = null;
 
     if (pathologyRadio.checked) {
         snomedCode = '310074003';
+        // Show specimen checkbox section for pathology
+        if (specimenCheckboxSection) {
+            specimenCheckboxSection.style.display = 'block';
+        }
+        // Update specimen section visibility based on checkbox
+        updateSpecimenSectionVisibility();
     } else if (radiologyRadio.checked) {
         snomedCode = '708175003';
+        // Hide specimen sections for radiology
+        if (specimenCheckboxSection) {
+            specimenCheckboxSection.style.display = 'none';
+        }
+        if (specimenSection) {
+            specimenSection.style.display = 'none';
+        }
     }
 
     if (snomedCode) {
@@ -503,9 +635,29 @@ function updateProviderDropdown() {
     }
 }
 
+function updateSpecimenSectionVisibility() {
+    const specimenCollectedCheckbox = document.getElementById('specimenCollected');
+    const specimenSection = document.getElementById('specimenSection');
+    const pathologyRadio = document.getElementById('pathologyRequest');
+    
+    // Only show specimen section if pathology is selected AND checkbox is checked
+    if (pathologyRadio && pathologyRadio.checked && specimenCollectedCheckbox && specimenCollectedCheckbox.checked) {
+        if (specimenSection) {
+            specimenSection.style.display = 'block';
+        }
+    } else {
+        if (specimenSection) {
+            specimenSection.style.display = 'none';
+        }
+    }
+}
+
 // Attach event listeners to Request Category radios
 document.getElementById('pathologyRequest').addEventListener('change', updateProviderDropdown);
 document.getElementById('radiologyRequest').addEventListener('change', updateProviderDropdown);
+
+// Attach event listener to specimen collection checkbox
+document.getElementById('specimenCollected').addEventListener('change', updateSpecimenSectionVisibility);
 
 // Attach event listeners to requestingContext radios
 document.querySelectorAll('input[name="requestingContext"]').forEach(radio => {
@@ -574,6 +726,31 @@ document.getElementById('createDiagnosticRequestModal').addEventListener('shown.
     document.getElementById('requestStatusActive').checked = true;
     document.getElementById('requestStatusOnHold').checked = false;
     updateStatusReasonVisibility();
+    
+    // Clear specimen fields
+    document.getElementById('specimenType').value = '';
+    document.getElementById('specimenTypeCode').value = '';
+    document.getElementById('specimenTypeDisplay').value = '';
+    document.getElementById('collectionMethod').value = '';
+    document.getElementById('collectionMethodCode').value = '';
+    document.getElementById('collectionMethodDisplay').value = '';
+    document.getElementById('bodySite').value = '';
+    document.getElementById('bodySiteCode').value = '';
+    document.getElementById('bodySiteDisplay').value = '';
+    
+    // Set default collection date/time to current time
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const localDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+    
+    const collectionDateTimeInput = document.getElementById('collectionDateTime');
+    if (collectionDateTimeInput) {
+        collectionDateTimeInput.value = localDateTime;
+    }
 });
 
 function closeDialog() {
@@ -582,4 +759,73 @@ function closeDialog() {
     modalInstance.hide();
     console.log('modal should be hidden now...')
 }
+
+// Function to capture SNOMED codes for specimen fields
+function captureSpecimenCode(inputId, codeFieldId, displayFieldId) {
+    const input = document.getElementById(inputId);
+    const codeField = document.getElementById(codeFieldId);
+    const displayField = document.getElementById(displayFieldId);
+    const value = input.value.trim();
+    
+    if (value) {
+        // Find the corresponding option in the datalist to get the code
+        const datalistId = input.getAttribute('list');
+        const datalist = document.getElementById(datalistId);
+        const options = datalist.querySelectorAll('option');
+        
+        let foundCode = '';
+        for (let option of options) {
+            if (option.value === value) {
+                foundCode = option.getAttribute('data-code') || '';
+                break;
+            }
+        }
+        
+        // Store both code and display
+        if (codeField) codeField.value = foundCode;
+        if (displayField) displayField.value = value;
+        
+        console.log(`Captured ${inputId}: code="${foundCode}", display="${value}"`);
+    } else {
+        // Clear if empty
+        if (codeField) codeField.value = '';
+        if (displayField) displayField.value = '';
+    }
+}
+
+// Add event listeners for specimen fields
+document.addEventListener('DOMContentLoaded', function() {
+    // Specimen Type
+    const specimenTypeInput = document.getElementById('specimenType');
+    if (specimenTypeInput) {
+        specimenTypeInput.addEventListener('change', function() {
+            captureSpecimenCode('specimenType', 'specimenTypeCode', 'specimenTypeDisplay');
+        });
+        specimenTypeInput.addEventListener('blur', function() {
+            captureSpecimenCode('specimenType', 'specimenTypeCode', 'specimenTypeDisplay');
+        });
+    }
+    
+    // Collection Method
+    const collectionMethodInput = document.getElementById('collectionMethod');
+    if (collectionMethodInput) {
+        collectionMethodInput.addEventListener('change', function() {
+            captureSpecimenCode('collectionMethod', 'collectionMethodCode', 'collectionMethodDisplay');
+        });
+        collectionMethodInput.addEventListener('blur', function() {
+            captureSpecimenCode('collectionMethod', 'collectionMethodCode', 'collectionMethodDisplay');
+        });
+    }
+    
+    // Body Site
+    const bodySiteInput = document.getElementById('bodySite');
+    if (bodySiteInput) {
+        bodySiteInput.addEventListener('change', function() {
+            captureSpecimenCode('bodySite', 'bodySiteCode', 'bodySiteDisplay');
+        });
+        bodySiteInput.addEventListener('blur', function() {
+            captureSpecimenCode('bodySite', 'bodySiteCode', 'bodySiteDisplay');
+        });
+    }
+});
 </script>

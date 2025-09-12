@@ -1,6 +1,6 @@
 # 🏥 FHIR Patient Dashboard
 
-A modern Flask app for exploring patient data from a FHIR API, using [HTMX](https://htmx.org/) for seamless interactivity and [Bootstrap 5](https://getbootstrap.com/) for responsive design.
+A modern Flask app for exploring patient data, retreiving a Patient Summary and creating Service Request bundles from a FHIR API, using [HTMX](https://htmx.org/) for seamless interactivity and [Bootstrap 5](https://getbootstrap.com/) for responsive design.
 
 ---
 

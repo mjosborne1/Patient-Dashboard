@@ -1,0 +1,57 @@
+{
+    "resourceType": "Specimen",
+    "meta": {
+        "profile": [
+        "http://hl7.org.au/fhir/StructureDefinition/au-specimen"
+        ]
+    },
+    "id": "325ab8e0-3184-49b9-b586-503ee53f58f1",
+    "identifier": [
+        {
+        "use": "usual",
+        "system": "http://myclinic.example.org.au/specimen-identifier",
+        "value": "SPEC-25-580217"
+        }
+    ],
+    "status": "available",
+    "subject": {
+        "reference": "Patient/davis-juan"
+    },
+    "type": {
+        "coding": [
+        {
+            "system": "http://snomed.info/sct",
+            "display": "Tissue specimen from skin",
+            "code": "119325001"
+        }
+        ],
+        "text": "Tissue specimen from skin"
+    },
+    "collection": {
+        "collectedDateTime": "2025-09-10T10:39:00.000000+10:00",
+        "method": {
+        "coding": [
+            {
+            "system": "http://snomed.info/sct",
+            "display": "Punch biopsy",
+            "code": "68660007"
+            }
+        ],
+        "text": "Punch biopsy"
+        },
+        "bodySite": {
+        "coding": [
+            {
+            "system": "http://snomed.info/sct",
+            "display": "Structure of left upper arm",
+            "code": "368208006"
+            }
+        ],
+        "text": "Structure of left upper arm"
+        }
+    },
+    "text": {
+        "status": "generated",
+        "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><h3>Specimen</h3><p><strong>Specimen Type:</strong> Tissue specimen from skin</p><p><strong>Collection Method:</strong> Punch biopsy</p><p><strong>Body Site:</strong> Structure of left upper arm</p><p><strong>Collection Date/Time:</strong> 2025-09-10T10:39:00.000000+10:00</p></div>"
+    }
+    }

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Datalist HTMX</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+    <h1>Test Diagnostic Request Search</h1>
+    
+    <form>
+        <div>
+            <label for="requestCategory">Request Category:</label>
+            <input type="radio" name="requestCategory" value="pathology" checked> Pathology
+            <input type="radio" name="requestCategory" value="radiology"> Radiology
+        </div>
+        
+        <div>
+            <label for="testName">Test Name:</label>
+            <input 
+                type="search" 
+                id="testName" 
+                name="testName" 
+                placeholder="Type 'fbc' to test..." 
+                autocomplete="off"                
+                hx-get="/fhir/diagvalueset/expand"
+                hx-trigger="input changed delay:500ms"
+                hx-target="#testNameList"
+                hx-include="closest form"
+                hx-swap="innerHTML"
+                list="testNameList"
+            >
+            <datalist id="testNameList">
+                <!-- Options will be loaded here by HTMX -->
+            </datalist>
+        </div>
+    </form>
+    
+    <div style="margin-top: 20px;">
+        <h3>Debug Info:</h3>
+        <div id="debug">
+            <p>Type "fbc" in the search box above to test the API.</p>
+        </div>
+    </div>
+    
+    <script>
+        // Debug script to show what's happening
+        document.body.addEventListener('htmx:afterRequest', function(evt) {
+            console.log('HTMX request completed:', evt.detail);
+            const debug = document.getElementById('debug');
+            const datalist = document.getElementById('testNameList');
+            debug.innerHTML = `
+                <p><strong>HTMX Response Status:</strong> ${evt.detail.xhr.status}</p>
+                <p><strong>Response Text:</strong></p>
+                <pre>${evt.detail.xhr.responseText}</pre>
+                <p><strong>Datalist HTML:</strong></p>
+                <pre>${datalist.outerHTML}</pre>
+                <p><strong>Number of options:</strong> ${datalist.querySelectorAll('option').length}</p>
+            `;
+        });
+    </script>
+</body>
+</html>

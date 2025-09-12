@@ -18,6 +18,31 @@ import datetime
 import logging
 from json import dumps
 import ast
+
+def _build_servicerequest_code(test):
+    """
+    Build the code element for ServiceRequest based on test data.
+    If no code is provided, only include text field (no coding array).
+    If code is provided, include both coding and text.
+    """
+    test_code = test.get("code", "").strip() if test.get("code") else ""
+    test_display = test.get("display", "")
+    
+    if not test_code:
+        # No code provided - only use text field (free-text test)
+        return {
+            "text": test_display
+        }
+    else:
+        # Code provided - include both coding and text
+        return {
+            "coding": [{
+                "system": "http://snomed.info/sct",  
+                "code": test_code,
+                "display": test_display
+            }],
+            "text": test_display
+        }
 import os
 from fhirutils import fhir_get
 import base64
@@ -243,7 +268,7 @@ def generate_narrative_text(resource):
         "div": narrative_text
     }
 
-def create_request_bundle(form_data, fhir_server_url=None):
+def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None):
     """
     Creates a FHIR Transaction Bundle for diagnostic requests based on form data.
     
@@ -380,7 +405,7 @@ def create_request_bundle(form_data, fhir_server_url=None):
         try:
             server_url = fhir_server_url or os.environ.get('FHIR_SERVER_URL', 'https://aucore.aidbox.beda.software/fhir')
             response = fhir_get(f"/PractitionerRole/{requester_id}?_include=PractitionerRole:practitioner", 
-                              fhir_server_url=server_url, timeout=10)
+                              fhir_server_url=server_url, auth_credentials=auth_credentials, timeout=10)
             if response.status_code == 200:
                 practitioner_role_data = response.json()
                 if practitioner_role_data.get('resourceType') == 'PractitionerRole':
@@ -545,9 +570,10 @@ def create_request_bundle(form_data, fhir_server_url=None):
             "type": {
                 "coding": [{
                     "system": "http://loinc.org",
-                    "code": "34109-9",
-                    "display": "Note"
-                }]
+                    "code": "107903-7",
+                    "display": "Clinical note"
+                }],
+                "text": "Clinical context"
             },
             "subject": patient_reference,
             "date": get_localtime_bne(),
@@ -865,14 +891,7 @@ def create_request_bundle(form_data, fhir_server_url=None):
                     "display": "Laboratory procedure" if request_category == "Pathology" else "Imaging"
                 }]
             }],
-            "code": {
-                "coding": [{
-                    "system": "http://snomed.info/sct",
-                    "code": test.get("code", ""),
-                    "display": test.get("display", "")
-                }],
-                "text": test.get("display", "")
-            },
+            "code": _build_servicerequest_code(test),
             "subject": patient_reference,
             "encounter": {
                 "reference": f"#{encounter_id}",
@@ -898,13 +917,26 @@ def create_request_bundle(form_data, fhir_server_url=None):
         if reasons:
             reason_list = []
             for reason in reasons:
-                reason_list.append({
-                    "coding": [{
-                        "system": "http://snomed.info/sct",
-                        "code": reason.get("code", ""),
-                        "display": reason.get("display", "")
-                    }]
-                })
+                # Handle None values from JSON null - use empty string as fallback
+                reason_code = reason.get("code") or ""
+                reason_code = reason_code.strip() if reason_code else ""
+                reason_display = reason.get("display", "")
+                
+                # If code is empty or not provided, treat as free-text (only use text field)
+                if not reason_code:
+                    reason_list.append({
+                        "text": reason_display
+                    })
+                else:
+                    # If code is provided, include both coding and text
+                    reason_list.append({
+                        "coding": [{
+                            "system": "http://snomed.info/sct",
+                            "code": reason_code,
+                            "display": reason_display
+                        }],
+                        "text": reason_display
+                    })
             
             if reason_list:
                 service_request["reasonCode"] = reason_list
@@ -993,53 +1025,6 @@ def create_request_bundle(form_data, fhir_server_url=None):
         transaction_bundle["entry"].append({
             "fullUrl": f"urn:uuid:{task_id}",
             "resource": task,
-            "request": {
-                "method": "POST",
-                "url": "Task"
-            }
-        })
-    
-    # Create a Task group that references all ServiceRequests
-    if service_requests:
-        task_group = {
-            "resourceType": "Task",
-            "meta": {
-                "profile": [
-                    "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-task-group"
-                ],
-                "tag": [
-                    {
-                        "system": "http://terminology.hl7.org.au/CodeSystem/resource-tag",
-                        "code": "fulfilment-task-group"
-                    }
-                ]
-            },
-            "id": group_task_id,
-            "groupIdentifier": {
-                "use": "usual",
-                "type": {
-                    "coding": [{
-                        "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
-                        "code": "PGN",
-                        "display": "Placer Group Number"
-                    }]
-                },
-                "system": "http://myclinic.example.org.au/identifier",
-                "value": requisition_number
-            },
-            "status": "requested",
-            "intent": "order",
-            "description": f"{request_category} Order Group",
-            "for": patient_reference,
-            "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
-            "owner": organization_reference if organization_reference else {"reference": "Organization/unknown"},
-            "authoredOn": get_localtime_bne()
-        }
-            
-        # Add Task group to bundle
-        transaction_bundle["entry"].append({
-            "fullUrl": f"urn:uuid:{group_task_id}",
-            "resource": task_group,
             "request": {
                 "method": "POST",
                 "url": "Task"
@@ -1168,6 +1153,53 @@ def create_request_bundle(form_data, fhir_server_url=None):
             "request": {
                 "method": "POST",
                 "url": "Consent"
+            }
+        })
+        
+    # Create a Task group that references all ServiceRequests - MUST BE LAST for filler processing trigger
+    if service_requests:
+        task_group = {
+            "resourceType": "Task",
+            "meta": {
+                "profile": [
+                    "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-task-group"
+                ],
+                "tag": [
+                    {
+                        "system": "http://terminology.hl7.org.au/CodeSystem/resource-tag",
+                        "code": "fulfilment-task-group"
+                    }
+                ]
+            },
+            "id": group_task_id,
+            "groupIdentifier": {
+                "use": "usual",
+                "type": {
+                    "coding": [{
+                        "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                        "code": "PGN",
+                        "display": "Placer Group Number"
+                    }]
+                },
+                "system": "http://myclinic.example.org.au/identifier",
+                "value": requisition_number
+            },
+            "status": "requested",
+            "intent": "order",
+            "description": f"{request_category} Order Group",
+            "for": patient_reference,
+            "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
+            "owner": organization_reference if organization_reference else {"reference": "Organization/unknown"},
+            "authoredOn": get_localtime_bne()
+        }
+            
+        # Add Task group to bundle - LAST entry for filler processing trigger
+        transaction_bundle["entry"].append({
+            "fullUrl": f"urn:uuid:{group_task_id}",
+            "resource": task_group,
+            "request": {
+                "method": "POST",
+                "url": "Task"
             }
         })
         

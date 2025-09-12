@@ -55,7 +55,7 @@ document.getElementById('fhirServerSettingsForm').addEventListener('submit', fun
   const username = document.getElementById('fhirUsernameInput').value.trim();
   const password = document.getElementById('fhirPasswordInput').value.trim();
 
-  localStorage.setItem('fhirServerUrl', url);
+  localStorage.setItem('fhir_server_url', url);
   localStorage.setItem('useFhirAuth', useAuth ? 'true' : 'false');
 
   if (useAuth) {
@@ -79,8 +79,8 @@ document.getElementById('fhirServerSettingsForm').addEventListener('submit', fun
 
 // On page load, populate fields from localStorage if available
 document.addEventListener('DOMContentLoaded', function() {
-  if (localStorage.getItem('fhirServerUrl')) {
-    document.getElementById('fhirServerUrlInput').value = localStorage.getItem('fhirServerUrl');
+  if (localStorage.getItem('fhir_server_url')) {
+    document.getElementById('fhirServerUrlInput').value = localStorage.getItem('fhir_server_url');
   }
   const useAuth = localStorage.getItem('useFhirAuth') === 'true';
   document.getElementById('useAuthCheckbox').checked = useAuth;

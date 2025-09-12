@@ -331,13 +331,6 @@
         }, 100);
     }
     
-    // Add server url header to HTMX requests
-    document.body.addEventListener('htmx:configRequest', function(evt) {
-    const fhirServerUrl = localStorage.getItem('fhir_server_url');
-    if (fhirServerUrl) {
-        evt.detail.headers['X-FHIR-Server-URL'] = fhirServerUrl;
-    }
-});
 function setJsonData(json) {
     const textarea = document.getElementById('jsonData');
     if (textarea) textarea.value = json;

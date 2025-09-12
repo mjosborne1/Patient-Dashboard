@@ -63,24 +63,37 @@
           </div>
           <div class="mb-3">
             <label for="testName" class="form-label">Test Name</label>
-            <input 
-                type="search" 
-                class="form-control" 
-                id="testName" 
-                name="testName" 
-                placeholder="start typing the test name..." 
-                autocomplete="off"                
-                hx-get="/fhir/diagvalueset/expand"
-                hx-trigger="input changed delay:500ms, keyup[!event.shiftKey && event.key=='Tab'] from:#testName, change from:input[name='requestCategory']"
-                hx-target="#testNameList"
-                hx-include="closest form"
-                hx-swap="innerHTML"
-                hx-indicator="#testName-indicator"
-                list="testNameList"
-            >
-            <datalist id="testNameList"></datalist>
-            <div id="testName-indicator" class="htmx-indicator">
-                <small class="text-muted">Searching...</small>
+            <div class="position-relative">
+                <input 
+                    type="search" 
+                    class="form-control" 
+                    id="testName" 
+                    name="testName" 
+                    placeholder="start typing the test name..." 
+                    autocomplete="off"                
+                    hx-get="/fhir/diagvalueset/expand"
+                    hx-trigger="input changed delay:500ms, keyup[!event.shiftKey && event.key=='Tab'] from:#testName, change from:input[name='requestCategory']"
+                    hx-target="#testNameDropdown"
+                    hx-include="closest form"
+                    hx-swap="innerHTML"
+                    hx-indicator="#testName-indicator"
+                    style="padding-right: 40px;"
+                >
+                <div id="testName-indicator" class="htmx-indicator position-absolute" style="right: 35px; top: 8px;">
+                    <small class="text-muted">Searching...</small>
+                </div>
+                
+                <!-- Clear button for test name search -->
+                <button type="button" class="btn-close position-absolute" id="clearTestName" style="right: 10px; top: 12px; font-size: 0.7em; display: none;" aria-label="Clear search" title="Clear search" onclick="clearTestNameSearch()"></button>
+                
+                <!-- Custom dropdown for test results -->
+                <div id="testNameDropdown" class="dropdown-menu position-absolute w-100 mt-1" style="display: none; max-height: 200px; overflow-y: auto; z-index: 1050;"></div>
+            </div>
+            <div class="form-text">
+                <i class="fas fa-info-circle"></i> Type to search for tests, then click on a result to add it as a tag
+            </div>
+            <div id="testName-results" class="mt-1" style="display: none;">
+                <small class="text-success"><i class="fas fa-check-circle"></i> <span id="testName-count">0</span> tests found</small>
             </div>
             
             <!-- Hidden field to store selected tests as tags -->
@@ -317,27 +330,40 @@
         <!-- Reason for request Searchbox-->
         <div class="mb-3">
             <label for="reason" class="form-label">Reason for Request</label>
-            <input 
-                type="search" 
-                class="form-control" 
-                id="reason" 
-                name="reason" 
-                placeholder="start typing the reason..." 
-                autocomplete="off"
-                hx-get="/fhir/reasonvalueset/expand"
-                hx-trigger="input changed delay:500ms, keyup[!event.shiftKey && event.key=='Tab'] from:#reason"
-                hx-target="#reasonList"
-                hx-include="closest form"
-                hx-swap="innerHTML"
-                hx-indicator="#reason-indicator"
-                list="reasonList"
-            >
-            <datalist id="reasonList"></datalist>
-            <div id="reason-indicator" class="htmx-indicator">
-                <small class="text-muted">Searching...</small>
+            <div class="position-relative">
+                <input 
+                    type="search" 
+                    class="form-control" 
+                    id="reason" 
+                    name="reason" 
+                    placeholder="start typing the reason..." 
+                    autocomplete="off"
+                    hx-get="/fhir/reasonvalueset/expand"
+                    hx-trigger="input changed delay:500ms, keyup[!event.shiftKey && event.key=='Tab'] from:#reason"
+                    hx-target="#reasonDropdown"
+                    hx-include="closest form"
+                    hx-swap="innerHTML"
+                    hx-indicator="#reason-indicator"
+                    style="padding-right: 40px;"
+                >
+                <div id="reason-indicator" class="htmx-indicator position-absolute" style="right: 35px; top: 8px;">
+                    <small class="text-muted">Searching...</small>
+                </div>
+                
+                <!-- Clear button for reason search -->
+                <button type="button" class="btn-close position-absolute" id="clearReason" style="right: 10px; top: 12px; font-size: 0.7em; display: none;" aria-label="Clear search" title="Clear search" onclick="clearReasonSearch()"></button>
+                
+                <!-- Custom dropdown for reason results -->
+                <div id="reasonDropdown" class="dropdown-menu position-absolute w-100 mt-1" style="display: none; max-height: 200px; overflow-y: auto; z-index: 1050;"></div>
+            </div>
+            <div class="form-text">
+                <i class="fas fa-info-circle"></i> Type to search for reasons, click on a result to add it as a tag, or press Enter to add custom text
+            </div>
+            <div id="reason-results" class="mt-1" style="display: none;">
+                <small class="text-success"><i class="fas fa-check-circle"></i> <span id="reason-count">0</span> reasons found</small>
             </div>
 
-             <!-- Hidden field to store selected tests as tags -->
+             <!-- Hidden field to store selected reasons as tags -->
             <input type="hidden" id="selectedReasons" name="selectedReasons">
             <div id="selectedReasonsDisplay" class="mt-2"></div>
           </div> 
@@ -404,12 +430,24 @@ window.selectedTests = Array.isArray(window.selectedTests) ? window.selectedTest
 function renderSelectedTests() {
     const display = document.getElementById('selectedTestsDisplay');
     const hidden = document.getElementById('selectedTests');
-    display.innerHTML = window.selectedTests.map((test, idx) =>
-        `<span class="badge bg-info text-dark me-1 mb-1">
-            ${typeof test === 'string' ? test : test.display}
-            <button type="button" class="btn-close btn-close-white btn-sm ms-1" aria-label="Remove" onclick="removeTest(${idx})" style="font-size:0.7em; vertical-align:middle;"></button>
-        </span>`
-    ).join('');
+    
+    if (window.selectedTests.length === 0) {
+        display.innerHTML = '<div class="text-muted small"><i class="fas fa-info-circle"></i> No tests selected yet</div>';
+    } else {
+        display.innerHTML = `
+            <div class="mb-2">
+                <small class="text-muted"><strong>Selected Tests (${window.selectedTests.length}):</strong></small>
+            </div>
+            ${window.selectedTests.map((test, idx) =>
+                `<span class="badge bg-primary me-1 mb-1 d-inline-flex align-items-center" style="font-size: 0.9em;">
+                    <span class="me-1">${idx + 1}.</span>
+                    ${typeof test === 'string' ? test : test.display}
+                    <button type="button" class="btn-close btn-close-white btn-sm ms-2" aria-label="Remove ${typeof test === 'string' ? test : test.display}" onclick="removeTest(${idx})" style="font-size:0.6em;" title="Remove test"></button>
+                </span>`
+            ).join('')}
+        `;
+    }
+    
     hidden.value = JSON.stringify(window.selectedTests);
 }
 
@@ -423,15 +461,17 @@ function addTestSelection() {
         );
         
         if (!existingTest) {
-            // Try to find the corresponding option in the datalist to get the code
-            const datalist = document.getElementById('testNameList');
-            const options = datalist.querySelectorAll('option');
+            // Try to find the corresponding option in the dropdown to get the code
+            const dropdown = document.getElementById('testNameDropdown');
             let testCode = '';
             
-            for (let option of options) {
-                if (option.value === value) {
-                    testCode = option.getAttribute('data-code') || '';
-                    break;
+            if (dropdown) {
+                const options = dropdown.querySelectorAll('.test-option');
+                for (let option of options) {
+                    if (option.getAttribute('data-display') === value) {
+                        testCode = option.getAttribute('data-code') || '';
+                        break;
+                    }
                 }
             }
             
@@ -444,8 +484,42 @@ function addTestSelection() {
             });
             renderSelectedTests();
             input.value = '';
+            
+            // Hide dropdown
+            hideTestDropdown();
+            
+            // Show brief success feedback
+            showTestAddedFeedback(value);
+        } else {
+            // Show feedback that test is already added
+            showTestAlreadyAddedFeedback(value);
+            hideTestDropdown();
         }
     }
+}
+
+function showTestAddedFeedback(testName) {
+    const input = document.getElementById('testName');
+    const originalPlaceholder = input.placeholder;
+    input.placeholder = `✓ "${testName}" added!`;
+    input.style.backgroundColor = '#d1edff';
+    
+    setTimeout(() => {
+        input.placeholder = originalPlaceholder;
+        input.style.backgroundColor = '';
+    }, 1500);
+}
+
+function showTestAlreadyAddedFeedback(testName) {
+    const input = document.getElementById('testName');
+    const originalPlaceholder = input.placeholder;
+    input.placeholder = `⚠ "${testName}" already added`;
+    input.style.backgroundColor = '#fff3cd';
+    
+    setTimeout(() => {
+        input.placeholder = originalPlaceholder;
+        input.style.backgroundColor = '';
+    }, 1500);
 }
 
 function removeTest(idx) {
@@ -461,11 +535,548 @@ function removeTest(idx) {
     }
 }
 
-// Add test on Enter, Tab, or when a datalist option is picked
+// Add test on Enter, Tab, or when a dropdown option is picked
 document.getElementById('testName').addEventListener('change', addTestSelection);
 document.getElementById('testName').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' || e.key === 'Tab') {
+    const dropdown = document.getElementById('testNameDropdown');
+    const options = dropdown.querySelectorAll('.test-option');
+    
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        // If there are visible options and no specific one is highlighted, select the first one
+        if (options.length > 0) {
+            const highlighted = dropdown.querySelector('.test-option.highlighted');
+            if (highlighted) {
+                highlighted.click();
+            } else {
+                // Select first option
+                options[0].click();
+            }
+        } else {
+            setTimeout(addTestSelection, 10);
+        }
+    } else if (e.key === 'Tab') {
         setTimeout(addTestSelection, 10);
+        hideTestDropdown();
+    } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        navigateDropdown('down');
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        navigateDropdown('up');
+    }
+});
+
+// Function to navigate dropdown with arrow keys
+function navigateDropdown(direction) {
+    const dropdown = document.getElementById('testNameDropdown');
+    const options = dropdown.querySelectorAll('.test-option');
+    
+    if (options.length === 0) return;
+    
+    let currentIndex = -1;
+    options.forEach((option, index) => {
+        if (option.classList.contains('highlighted')) {
+            currentIndex = index;
+        }
+        option.classList.remove('highlighted');
+    });
+    
+    if (direction === 'down') {
+        currentIndex = (currentIndex + 1) % options.length;
+    } else {
+        currentIndex = currentIndex <= 0 ? options.length - 1 : currentIndex - 1;
+    }
+    
+    options[currentIndex].classList.add('highlighted');
+    options[currentIndex].scrollIntoView({ block: 'nearest' });
+}
+
+// Show dropdown and handle test selection
+document.body.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.target && evt.detail.target.id === 'testNameDropdown') {
+        const dropdown = document.getElementById('testNameDropdown');
+        const resultsDiv = document.getElementById('testName-results');
+        const countSpan = document.getElementById('testName-count');
+        const testNameInput = document.getElementById('testName');
+        
+        if (dropdown && resultsDiv && countSpan) {
+            const testOptions = dropdown.querySelectorAll('.test-option');
+            const optionCount = testOptions.length;
+            
+            if (optionCount > 0) {
+                // Show dropdown with results
+                dropdown.style.display = 'block';
+                dropdown.classList.add('show');
+                
+                // Show count feedback
+                countSpan.textContent = optionCount;
+                resultsDiv.style.display = 'block';
+                
+                // Add success border styling
+                testNameInput.style.borderColor = '#198754';
+                testNameInput.style.boxShadow = '0 0 0 0.2rem rgba(25, 135, 84, 0.25)';
+                
+                // Add click handlers to test options
+                testOptions.forEach(option => {
+                    option.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const display = this.getAttribute('data-display');
+                        const code = this.getAttribute('data-code');
+                        
+                        // Set the input value and trigger test addition
+                        testNameInput.value = display;
+                        addTestSelection();
+                        
+                        // Hide dropdown
+                        hideTestDropdown();
+                    });
+                });
+                
+                // Hide results count after 3 seconds
+                setTimeout(() => {
+                    resultsDiv.style.display = 'none';
+                }, 3000);
+                
+            } else {
+                // No results found
+                if (dropdown.innerHTML.trim()) {
+                    dropdown.style.display = 'block';
+                    dropdown.classList.add('show');
+                } else {
+                    hideTestDropdown();
+                }
+                resultsDiv.style.display = 'none';
+                testNameInput.style.borderColor = '';
+                testNameInput.style.boxShadow = '';
+            }
+        }
+    }
+});
+
+// Function to hide test dropdown
+function hideTestDropdown() {
+    const dropdown = document.getElementById('testNameDropdown');
+    const testNameInput = document.getElementById('testName');
+    
+    if (dropdown) {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    }
+    
+    // Reset input styling
+    if (testNameInput) {
+        testNameInput.style.borderColor = '';
+        testNameInput.style.boxShadow = '';
+    }
+}
+
+// Hide dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const testNameInput = document.getElementById('testName');
+    const dropdown = document.getElementById('testNameDropdown');
+    
+    if (testNameInput && dropdown && !testNameInput.contains(e.target) && !dropdown.contains(e.target)) {
+        hideTestDropdown();
+    }
+});
+
+// Add CSS for highlighted dropdown items
+const style = document.createElement('style');
+style.textContent = `
+    .test-option.highlighted,
+    .reason-option.highlighted {
+        background-color: #e9ecef !important;
+        color: #495057 !important;
+    }
+    .test-option:hover,
+    .reason-option:hover {
+        background-color: #f8f9fa !important;
+    }
+    #testNameDropdown,
+    #reasonDropdown {
+        border: 1px solid #ced4da;
+        border-radius: 0.375rem;
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
+    /* Hide browser's default search clear button */
+    #reason::-webkit-search-cancel-button,
+    #testName::-webkit-search-cancel-button {
+        -webkit-appearance: none;
+        appearance: none;
+    }
+    #reason::-ms-clear,
+    #testName::-ms-clear {
+        display: none;
+    }
+`;
+document.head.appendChild(style);
+
+// Hide dropdown when pressing Escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        hideTestDropdown();
+        hideReasonDropdown();
+    }
+});
+
+// Reason functionality - similar to test functionality
+window.selectedReasons = Array.isArray(window.selectedReasons) ? window.selectedReasons : [];
+
+function renderSelectedReasons() {
+    const display = document.getElementById('selectedReasonsDisplay');
+    const hidden = document.getElementById('selectedReasons');
+    
+    if (window.selectedReasons.length === 0) {
+        display.innerHTML = '<div class="text-muted small"><i class="fas fa-info-circle"></i> No reasons selected yet</div>';
+    } else {
+        display.innerHTML = `
+            <div class="mb-2">
+                <small class="text-muted"><strong>Selected Reasons (${window.selectedReasons.length}):</strong></small>
+            </div>
+            ${window.selectedReasons.map((reason, idx) =>
+                `<span class="badge bg-secondary me-1 mb-1 d-inline-flex align-items-center" style="font-size: 0.9em;">
+                    <span class="me-1">${idx + 1}.</span>
+                    ${typeof reason === 'string' ? reason : reason.display}
+                    ${reason.code ? '' : '<i class="fas fa-edit ms-1" title="Custom text"></i>'}
+                    <button type="button" class="btn-close btn-close-white btn-sm ms-2" aria-label="Remove ${typeof reason === 'string' ? reason : reason.display}" onclick="removeReason(${idx})" style="font-size:0.6em;" title="Remove reason"></button>
+                </span>`
+            ).join('')}
+        `;
+    }
+    
+    hidden.value = JSON.stringify(window.selectedReasons);
+}
+
+function addReasonSelection() {
+    const input = document.getElementById('reason');
+    const value = input.value.trim();
+    if (value && Array.isArray(window.selectedReasons)) {
+        // Check if we already have this reason (by display name)
+        const existingReason = window.selectedReasons.find(reason => 
+            (typeof reason === 'string' ? reason : reason.display) === value
+        );
+        
+        if (!existingReason) {
+            // Try to find the corresponding option in the dropdown to get the code
+            const dropdown = document.getElementById('reasonDropdown');
+            let reasonCode = null;
+            
+            if (dropdown) {
+                const options = dropdown.querySelectorAll('.reason-option');
+                for (let option of options) {
+                    if (option.getAttribute('data-display') === value) {
+                        reasonCode = option.getAttribute('data-code') || null;
+                        break;
+                    }
+                }
+            }
+            
+            // Store as object with code, display, and display_sequence
+            // For custom text, code will be null
+            window.selectedReasons.push({
+                code: reasonCode,
+                display: value,
+                display_sequence: window.selectedReasons.length + 1
+            });
+            renderSelectedReasons();
+            
+            // Clear input and hide dropdown
+            input.value = '';
+            hideReasonDropdown();
+            
+            // Force clear dropdown content to prevent it from showing again
+            const reasonDropdownEl = document.getElementById('reasonDropdown');
+            if (reasonDropdownEl) {
+                reasonDropdownEl.innerHTML = '';
+                reasonDropdownEl.style.display = 'none';
+                reasonDropdownEl.classList.remove('show');
+            }
+            
+            // Clear any visible results
+            const resultsDiv = document.getElementById('reason-results');
+            if (resultsDiv) {
+                resultsDiv.style.display = 'none';
+            }
+            
+            // Show brief success feedback
+            showReasonAddedFeedback(value);
+        } else {
+            // Show feedback that reason is already added
+            showReasonAlreadyAddedFeedback(value);
+            hideReasonDropdown();
+        }
+    }
+}
+
+function showReasonAddedFeedback(reasonText) {
+    const input = document.getElementById('reason');
+    const originalPlaceholder = input.placeholder;
+    input.placeholder = `✓ "${reasonText}" added!`;
+    input.style.backgroundColor = '#d1edff';
+    
+    setTimeout(() => {
+        input.placeholder = originalPlaceholder;
+        input.style.backgroundColor = '';
+    }, 1500);
+}
+
+function showReasonAlreadyAddedFeedback(reasonText) {
+    const input = document.getElementById('reason');
+    const originalPlaceholder = input.placeholder;
+    input.placeholder = `⚠ "${reasonText}" already added`;
+    input.style.backgroundColor = '#fff3cd';
+    
+    setTimeout(() => {
+        input.placeholder = originalPlaceholder;
+        input.style.backgroundColor = '';
+    }, 1500);
+}
+
+function removeReason(idx) {
+    if (Array.isArray(window.selectedReasons)) {
+        window.selectedReasons.splice(idx, 1);
+        // Recalculate display_sequence for remaining reasons to maintain consecutive numbering
+        window.selectedReasons.forEach((reason, index) => {
+            if (typeof reason === 'object') {
+                reason.display_sequence = index + 1;
+            }
+        });
+        renderSelectedReasons();
+    }
+}
+
+// Add reason on Enter, Tab, or when a dropdown option is picked
+document.getElementById('reason').addEventListener('change', addReasonSelection);
+document.getElementById('reason').addEventListener('keydown', function(e) {
+    const dropdown = document.getElementById('reasonDropdown');
+    const options = dropdown.querySelectorAll('.reason-option');
+    
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        // If there are visible options and no specific one is highlighted, select the first one
+        if (options.length > 0) {
+            const highlighted = dropdown.querySelector('.reason-option.highlighted');
+            if (highlighted) {
+                highlighted.click();
+            } else {
+                // Allow custom text entry when no specific option is highlighted
+                hideReasonDropdown(); // Hide immediately
+                setTimeout(addReasonSelection, 10);
+            }
+        } else {
+            // No dropdown options, allow custom text
+            hideReasonDropdown(); // Hide immediately for custom text
+            setTimeout(addReasonSelection, 10);
+        }
+    } else if (e.key === 'Tab') {
+        setTimeout(addReasonSelection, 10);
+        hideReasonDropdown();
+    } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        navigateReasonDropdown('down');
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        navigateReasonDropdown('up');
+    }
+});
+
+// Function to navigate reason dropdown with arrow keys
+function navigateReasonDropdown(direction) {
+    const dropdown = document.getElementById('reasonDropdown');
+    const options = dropdown.querySelectorAll('.reason-option');
+    
+    if (options.length === 0) return;
+    
+    let currentIndex = -1;
+    options.forEach((option, index) => {
+        if (option.classList.contains('highlighted')) {
+            currentIndex = index;
+        }
+        option.classList.remove('highlighted');
+    });
+    
+    if (direction === 'down') {
+        currentIndex = (currentIndex + 1) % options.length;
+    } else {
+        currentIndex = currentIndex <= 0 ? options.length - 1 : currentIndex - 1;
+    }
+    
+    options[currentIndex].classList.add('highlighted');
+    options[currentIndex].scrollIntoView({ block: 'nearest' });
+}
+
+// Show reason dropdown and handle reason selection
+document.body.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.target && evt.detail.target.id === 'reasonDropdown') {
+        const dropdown = document.getElementById('reasonDropdown');
+        const resultsDiv = document.getElementById('reason-results');
+        const countSpan = document.getElementById('reason-count');
+        const reasonInput = document.getElementById('reason');
+        
+        if (dropdown && resultsDiv && countSpan) {
+            const reasonOptions = dropdown.querySelectorAll('.reason-option');
+            const optionCount = reasonOptions.length;
+            
+            if (optionCount > 0) {
+                // Show dropdown with results
+                dropdown.style.display = 'block';
+                dropdown.classList.add('show');
+                
+                // Show count feedback
+                countSpan.textContent = optionCount;
+                resultsDiv.style.display = 'block';
+                
+                // Add success border styling
+                reasonInput.style.borderColor = '#198754';
+                reasonInput.style.boxShadow = '0 0 0 0.2rem rgba(25, 135, 84, 0.25)';
+                
+                // Add click handlers to reason options
+                reasonOptions.forEach(option => {
+                    // Remove any existing click handlers to avoid duplicates
+                    option.replaceWith(option.cloneNode(true));
+                });
+                
+                // Re-query after cloning to get fresh elements
+                const freshReasonOptions = dropdown.querySelectorAll('.reason-option');
+                freshReasonOptions.forEach(option => {
+                    option.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const display = this.getAttribute('data-display');
+                        const code = this.getAttribute('data-code');
+                        
+                        // Set the input value and trigger reason addition
+                        reasonInput.value = display;
+                        
+                        // Hide dropdown immediately
+                        hideReasonDropdown();
+                        
+                        // Add the selection after a small delay to ensure dropdown is hidden
+                        setTimeout(() => {
+                            addReasonSelection();
+                        }, 50);
+                    });
+                });
+                
+                // Hide results count after 3 seconds
+                setTimeout(() => {
+                    resultsDiv.style.display = 'none';
+                }, 3000);
+                
+            } else {
+                // No results found - still allow custom text entry
+                if (dropdown.innerHTML.trim()) {
+                    dropdown.style.display = 'block';
+                    dropdown.classList.add('show');
+                } else {
+                    hideReasonDropdown();
+                }
+                resultsDiv.style.display = 'none';
+                reasonInput.style.borderColor = '';
+                reasonInput.style.boxShadow = '';
+            }
+        }
+    }
+});
+
+// Function to hide reason dropdown
+function hideReasonDropdown() {
+    const dropdown = document.getElementById('reasonDropdown');
+    const reasonInput = document.getElementById('reason');
+    
+    if (dropdown) {
+        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
+    }
+    
+    // Reset input styling
+    if (reasonInput) {
+        reasonInput.style.borderColor = '';
+        reasonInput.style.boxShadow = '';
+    }
+}
+
+// Hide reason dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const reasonInput = document.getElementById('reason');
+    const dropdown = document.getElementById('reasonDropdown');
+    
+    if (reasonInput && dropdown && !reasonInput.contains(e.target) && !dropdown.contains(e.target)) {
+        hideReasonDropdown();
+    }
+});
+
+// Additional event listener to ensure dropdown hides on any reason option click
+document.addEventListener('click', function(e) {
+    if (e.target && e.target.classList.contains('reason-option')) {
+        // Force hide the dropdown when any reason option is clicked
+        setTimeout(() => {
+            hideReasonDropdown();
+        }, 100);
+    }
+});
+
+// Clear search functions
+function clearTestNameSearch() {
+    const input = document.getElementById('testName');
+    const clearBtn = document.getElementById('clearTestName');
+    
+    input.value = '';
+    clearBtn.style.display = 'none';
+    hideTestDropdown();
+    
+    // Clear any results display
+    const resultsDiv = document.getElementById('testName-results');
+    if (resultsDiv) {
+        resultsDiv.style.display = 'none';
+    }
+    
+    // Reset input styling
+    input.style.borderColor = '';
+    input.style.boxShadow = '';
+    
+    // Focus back on input
+    input.focus();
+}
+
+function clearReasonSearch() {
+    const input = document.getElementById('reason');
+    const clearBtn = document.getElementById('clearReason');
+    
+    input.value = '';
+    clearBtn.style.display = 'none';
+    hideReasonDropdown();
+    
+    // Clear any results display
+    const resultsDiv = document.getElementById('reason-results');
+    if (resultsDiv) {
+        resultsDiv.style.display = 'none';
+    }
+    
+    // Reset input styling
+    input.style.borderColor = '';
+    input.style.boxShadow = '';
+    
+    // Focus back on input
+    input.focus();
+}
+
+// Show/hide clear buttons based on input content
+document.getElementById('testName').addEventListener('input', function() {
+    const clearBtn = document.getElementById('clearTestName');
+    if (this.value.trim()) {
+        clearBtn.style.display = 'block';
+    } else {
+        clearBtn.style.display = 'none';
+    }
+});
+
+document.getElementById('reason').addEventListener('input', function() {
+    const clearBtn = document.getElementById('clearReason');
+    if (this.value.trim()) {
+        clearBtn.style.display = 'block';
+    } else {
+        clearBtn.style.display = 'none';
     }
 });
 
@@ -500,38 +1111,7 @@ function renderSelectedReasons() {
     hidden.value = JSON.stringify(window.selectedReasons);
 }
 
-function addReasonSelection() {
-    const input = document.getElementById('reason');
-    const value = input.value.trim();
-    if (value && Array.isArray(window.selectedReasons)) {
-        // Check if we already have this reason (by display name)
-        const existingReason = window.selectedReasons.find(reason => 
-            (typeof reason === 'string' ? reason : reason.display) === value
-        );
-        
-        if (!existingReason) {
-            // Try to find the corresponding option in the datalist to get the code
-            const datalist = document.getElementById('reasonList');
-            const options = datalist.querySelectorAll('option');
-            let reasonCode = '';
-            
-            for (let option of options) {
-                if (option.value === value) {
-                    reasonCode = option.getAttribute('data-code') || '';
-                    break;
-                }
-            }
-            
-            // Store as object with code and display
-            window.selectedReasons.push({
-                code: reasonCode,
-                display: value
-            });
-            renderSelectedReasons();
-            input.value = '';
-        }
-    }
-}
+
 
 function removeReason(idx) {
     if (Array.isArray(window.selectedReasons)) {
@@ -666,12 +1246,6 @@ document.querySelectorAll('input[name="requestingContext"]').forEach(radio => {
 
 // Add reason on Enter, Tab, or when a datalist option is picked
 document.getElementById('reason').addEventListener('change', addReasonSelection);
-document.getElementById('reason').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' || e.key === 'Tab') {
-        setTimeout(addReasonSelection, 10);
-    }
-});
-
 // Add copyTo practitioner on Enter, Tab, or when a datalist option is picked
 document.getElementById('copyToPractitioner').addEventListener('change', addCopyToPractitionerSelection);
 document.getElementById('copyToPractitioner').addEventListener('keydown', function(e) {

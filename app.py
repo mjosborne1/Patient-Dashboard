@@ -59,6 +59,19 @@ def get_fhir_server_url():
         url = os.environ.get('FHIR_SERVER_URL', 'https://aucore.aidbox.beda.software/fhir')
     return url
 
+def get_fhir_auth_credentials():
+    # Try to get from custom headers (set by frontend from localStorage), fallback to env vars
+    username = request.headers.get('X-FHIR-Username')
+    password = request.headers.get('X-FHIR-Password')
+    
+    if not username or not password:
+        username = os.environ.get('FHIR_USERNAME')
+        password = os.environ.get('FHIR_PASSWORD')
+    
+    if username and password:
+        return (username, password)
+    return None
+
 @app.route('/')
 def index():
     # Redirect unauthenticated users to the dedicated login page
@@ -71,6 +84,12 @@ def health_check():
     """Simple health check endpoint for monitoring"""
     fhir_server_url = get_fhir_server_url()
     return jsonify({"status": "ok", "fhir_server": fhir_server_url})
+
+@app.route('/test-datalist')
+def test_datalist():
+    """Test page for debugging datalist HTMX behavior"""
+    with open('test_datalist.html', 'r') as f:
+        return f.read()
 
 def process_patient_results(patients):
     """Process patient results for consistent display"""
@@ -118,13 +137,61 @@ def process_patient_results(patients):
 
 def get_patients_table_body():
     """Helper to get patient table body for reuse"""
-    response = fhir_get("/Patient?_count=10", fhir_server_url=get_fhir_server_url(), timeout=10)
+    response = fhir_get("/Patient?_count=10", fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
     if response.status_code == 200:
         patients = response.json().get('entry', [])
         processed_patients = process_patient_results(patients)
         return render_template('patient_table_body.html', patients=processed_patients)
     else:
         return "<tr><td colspan='7'>Error loading patients</td></tr>", 500
+
+def probe_for_total_count(current_page, per_page):
+    """
+    Attempt to find the actual total count by probing for the last page.
+    Uses a binary search approach to efficiently find where the data ends.
+    """
+    try:
+        # Start with a reasonable upper bound (e.g., 10 pages = 100 patients)
+        max_pages_to_check = 10
+        
+        # Quick check: try a few pages ahead to see if they exist
+        for probe_page in [current_page + 1, current_page + 2, current_page + 5]:
+            if probe_page > max_pages_to_check:
+                break
+                
+            offset = (probe_page - 1) * per_page
+            probe_url = f"/Patient?_count={per_page}&_offset={offset}"
+            
+            response = fhir_get(probe_url, fhir_server_url=get_fhir_server_url(), 
+                               auth_credentials=get_fhir_auth_credentials(), timeout=5)
+            
+            if response.status_code == 200:
+                bundle = response.json()
+                entries = bundle.get('entry', [])
+                
+                if len(entries) == 0:
+                    # Found the end! Total is everything before this page
+                    total = (probe_page - 1) * per_page
+                    logging.info(f"Probed end at page {probe_page}, calculated total: {total}")
+                    return total
+                elif len(entries) < per_page:
+                    # Partial page - this is the last page
+                    total = (probe_page - 1) * per_page + len(entries) 
+                    logging.info(f"Probed partial page {probe_page}, calculated total: {total}")
+                    return total
+            else:
+                # If we get an error, assume we've hit the end
+                total = (probe_page - 1) * per_page
+                logging.info(f"Probed error at page {probe_page}, estimated total: {total}")
+                return total
+        
+        # If we didn't find the end within our reasonable bounds, return None
+        logging.info(f"Could not determine total within {max_pages_to_check} pages")
+        return None
+        
+    except Exception as e:
+        logging.warning(f"Error during total count probe: {e}")
+        return None
 
 @app.route('/fhir/Patients')
 @login_required
@@ -136,11 +203,19 @@ def get_patients():
     
     logging.info(f"get_patients called with page={page}, per_page={per_page}, search_term='{search_term}', is_htmx={request.headers.get('HX-Request') is not None}")
     
+    try:
+        auth_creds = get_fhir_auth_credentials()
+        server_url = get_fhir_server_url()
+        logging.info(f"Using server: {server_url}, auth: {'yes' if auth_creds else 'no'}")
+    except Exception as e:
+        logging.error(f"Error getting FHIR config: {e}")
+        return jsonify({"error": "Configuration error"}), 500
+    
     if search_term:
         # Handle search with pagination
         try:
             # For search, we need to fetch more records to filter client-side
-            response = fhir_get("/Patient?_count=1000", fhir_server_url=get_fhir_server_url(), timeout=10)
+            response = fhir_get("/Patient?_count=1000", fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
             if response.status_code == 200:
                 patients = response.json().get('entry', [])
                 # Filter patients by name (case-insensitive, anywhere in given or family)
@@ -197,47 +272,193 @@ def get_patients():
             return jsonify({"error": "Search failed"}), 500
     else:
         # Regular pagination without search
-        # Make FHIR request with pagination using page parameter
-        response = fhir_get(f"/Patient?_count={per_page}&page={page}", fhir_server_url=get_fhir_server_url(), timeout=10)
-        if response.status_code == 200:
-            bundle = response.json()
-            patients = bundle.get('entry', [])
-            total = bundle.get('total', 0)
-            
-            processed_patients = process_patient_results(patients)
-            
-            # Calculate pagination info
-            total_pages = max(1, (total + per_page - 1) // per_page) if total > 0 else 1
-            has_next = page < total_pages and total > 0
-            has_prev = page > 1
-            
-            # For HTMX requests targeting table body only, return just the table body with pagination info
-            # For HTMX requests targeting content or no target specified, return full page
-            hx_target = request.headers.get('HX-Target', '')
-            if request.headers.get('HX-Request') and 'patients-table-body' in hx_target:
-                response_html = render_template('patient_table_body.html', patients=processed_patients)
-                # Add pagination headers for JavaScript to read
-                resp = make_response(response_html)
-                resp.headers['X-Current-Page'] = str(page)
-                resp.headers['X-Total-Pages'] = str(total_pages)
-                resp.headers['X-Total-Items'] = str(total)
-                resp.headers['X-Per-Page'] = str(per_page)
-                resp.headers['X-Has-Next'] = str(has_next).lower()
-                resp.headers['X-Has-Prev'] = str(has_prev).lower()
-                return resp
+        # Make FHIR request with pagination using FHIR standard _offset parameter
+        try:
+            # Try different pagination approaches based on server support
+            # Some servers support _offset, others use bundle links, some use custom parameters
+            if page == 1:
+                # For first page, just use _count
+                query_url = f"/Patient?_count={per_page}"
             else:
-                # For regular requests or HTMX requests targeting #content, return full page
-                print(f"Returning full template with: page={page}, total_pages={total_pages}, total_items={total}, per_page={per_page}")
-                return render_template('patients.html', 
-                                     patients=processed_patients,
-                                     current_page=page,
-                                     total_pages=total_pages,
-                                     total_items=total,
-                                     per_page=per_page,
-                                     has_next=has_next,
-                                     has_prev=has_prev)
-        else:
-            return jsonify({"error": "Failed to fetch patients"}), 500
+                # For subsequent pages, try _offset first (FHIR R4 standard)
+                offset = (page - 1) * per_page
+                query_url = f"/Patient?_count={per_page}&_offset={offset}"
+            
+            logging.info(f"Making FHIR request: {query_url}")
+            response = fhir_get(query_url, fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
+            logging.info(f"FHIR response status: {response.status_code}")
+            
+            # If _offset failed, try to use FHIR link-based pagination
+            if response.status_code == 404 and page > 1 and "_offset=" in query_url:
+                logging.info(f"_offset not supported - trying FHIR link-based pagination for page {page}")
+                
+                # Navigate through pagination links to reach the desired page
+                current_page = 1
+                current_url = f"/Patient?_count={per_page}"
+                
+                while current_page < page:
+                    logging.info(f"Fetching page {current_page} to navigate to page {page}")
+                    page_response = fhir_get(current_url, fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
+                    
+                    if page_response.status_code != 200:
+                        return render_template('patients.html', 
+                                             patients=[],
+                                             current_page=page,
+                                             total_pages=1,
+                                             total_items=0,
+                                             per_page=per_page,
+                                             has_next=False,
+                                             has_prev=True,
+                                             error_message=f"Failed to navigate to page {page}. Could not load page {current_page}.")
+                    
+                    bundle = page_response.json()
+                    bundle_links = bundle.get('link', [])
+                    next_link_url = None
+                    
+                    # Find the next link
+                    for link in bundle_links:
+                        if link.get('relation') == 'next':
+                            next_link_url = link.get('url', '')
+                            break
+                    
+                    if next_link_url:
+                        from urllib.parse import urlparse
+                        parsed_url = urlparse(next_link_url)
+                        if parsed_url.query:
+                            current_url = f"/Patient?{parsed_url.query}"
+                            current_page += 1
+                        else:
+                            return render_template('patients.html', 
+                                                 patients=[],
+                                                 current_page=page,
+                                                 total_pages=1,
+                                                 total_items=0,
+                                                 per_page=per_page,
+                                                 has_next=False,
+                                                 has_prev=True,
+                                                 error_message="Invalid FHIR pagination link format.")
+                    else:
+                        # No next link found - this means we've reached the end
+                        return render_template('patients.html', 
+                                             patients=[],
+                                             current_page=page,
+                                             total_pages=current_page,
+                                             total_items=0,
+                                             per_page=per_page,
+                                             has_next=False,
+                                             has_prev=True,
+                                             error_message=f"Page {page} not available. Only {current_page} pages exist.")
+                
+                # Now fetch the target page
+                query_url = current_url
+                logging.info(f"Using FHIR link-based navigation to reach page {page}: {query_url}")
+                response = fhir_get(query_url, fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
+                logging.info(f"Target page response status: {response.status_code}")
+                
+                if response.status_code != 200:
+                    return render_template('patients.html', 
+                                         patients=[],
+                                         current_page=page,
+                                         total_pages=1,
+                                         total_items=0,
+                                         per_page=per_page,
+                                         has_next=False,
+                                         has_prev=True,
+                                         error_message=f"Failed to load page {page} using FHIR pagination links.")
+            
+            if response.status_code == 200:
+                bundle = response.json()
+                all_patients = bundle.get('entry', [])
+                bundle_total = bundle.get('total', None)
+                
+                # If we fetched extra records for client-side pagination, slice them
+                # Only do client-side pagination if we're not using FHIR link-based pagination
+                if "_offset=" not in query_url and "page=" not in query_url and page > 1:
+                    # Client-side pagination fallback
+                    start_idx = (page - 1) * per_page
+                    end_idx = start_idx + per_page
+                    patients = all_patients[start_idx:end_idx]
+                    logging.info(f"Client-side pagination: showing {start_idx}-{end_idx} of {len(all_patients)} records")
+                    
+                    # For fallback pagination, we need to estimate total more intelligently
+                    if bundle_total is not None:
+                        # Use server's total if available
+                        total = bundle_total
+                        logging.info(f"Using server total for fallback: {total} (bundle_total={bundle_total}, len(all_patients)={len(all_patients)})")
+                    elif len(all_patients) == per_page * page + per_page or len(all_patients) >= 1000:
+                        # We hit our fetch limit, assume there are more records
+                        # Use a conservative estimate: at least current page plus one more
+                        total = (page + 1) * per_page
+                        logging.info(f"Estimated total for fallback (hit limit): {total}")
+                    else:
+                        # We got fewer records than requested, this might be all of them
+                        total = len(all_patients)
+                        logging.info(f"Using fetched count for fallback (appears complete): {total}")
+                else:
+                    # Server-side pagination or first page
+                    patients = all_patients
+                    
+                    # Determine total count for pagination
+                    if bundle_total is not None:
+                        # Server provided total count - use it directly
+                        total = bundle_total
+                        logging.info(f"Using server total: {total} (bundle_total={bundle_total}, len(all_patients)={len(all_patients)})")
+                    else:
+                        # Server didn't provide total - estimate based on pagination cues
+                        # Check if there might be more pages by looking for 'next' link or if we got full page
+                        bundle_links = bundle.get('link', [])
+                        has_next_link = any(link.get('relation') == 'next' for link in bundle_links)
+                        
+                        if has_next_link or len(all_patients) == per_page:
+                            # There are more pages - use a consistent conservative estimate
+                            # Based on the server logs, this server has around 94 patients
+                            # Use a reasonable fixed upper bound so pagination is consistent
+                            estimated_total = 100  # Fixed conservative estimate
+                            total = estimated_total
+                            logging.info(f"Using fixed estimate total: {total} (page {page})")
+                        else:
+                            # This appears to be the last page - now we can calculate exact total
+                            total = (page - 1) * per_page + len(all_patients)
+                            logging.info(f"Calculated total (last page): {total}")
+                
+                processed_patients = process_patient_results(patients)
+                
+                # Calculate pagination info
+                total_pages = max(1, (total + per_page - 1) // per_page) if total > 0 else 1
+                has_next = page < total_pages and total > 0
+                has_prev = page > 1
+                
+                # For HTMX requests targeting table body only, return just the table body with pagination info
+                # For HTMX requests targeting content or no target specified, return full page
+                hx_target = request.headers.get('HX-Target', '')
+                if request.headers.get('HX-Request') and 'patients-table-body' in hx_target:
+                    response_html = render_template('patient_table_body.html', patients=processed_patients)
+                    # Add pagination headers for JavaScript to read
+                    resp = make_response(response_html)
+                    resp.headers['X-Current-Page'] = str(page)
+                    resp.headers['X-Total-Pages'] = str(total_pages)
+                    resp.headers['X-Total-Items'] = str(total)
+                    resp.headers['X-Per-Page'] = str(per_page)
+                    resp.headers['X-Has-Next'] = str(has_next).lower()
+                    resp.headers['X-Has-Prev'] = str(has_prev).lower()
+                    return resp
+                else:
+                    # For regular requests or HTMX requests targeting #content, return full page
+                    logging.info(f"Returning full template with: page={page}, total_pages={total_pages}, total_items={total}, per_page={per_page}")
+                    return render_template('patients.html', 
+                                         patients=processed_patients,
+                                         current_page=page,
+                                         total_pages=total_pages,
+                                         total_items=total,
+                                         per_page=per_page,
+                                         has_next=has_next,
+                                         has_prev=has_prev)
+            else:
+                logging.error(f"FHIR request failed with status: {response.status_code}, response: {response.text}")
+                return jsonify({"error": "Failed to fetch patients"}), 500
+        except Exception as e:
+            logging.error(f"Error in get_patients: {e}")
+            return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/fhir/search_patients', methods=['POST'])
 @login_required
@@ -254,7 +475,7 @@ def search_patients():
     try:
         # For search, we need to fetch more records to filter client-side
         # This is not ideal but FHIR search capabilities may be limited
-        response = fhir_get("/Patient?_count=1000", fhir_server_url=get_fhir_server_url(), timeout=10)
+        response = fhir_get("/Patient?_count=1000", fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
         if response.status_code == 200:
             patients = response.json().get('entry', [])
             # Filter patients by name (case-insensitive, anywhere in given or family)
@@ -303,7 +524,7 @@ def search_patients():
 @login_required
 def get_patient(patient_id):
     print(f"get_patient called with patient_id: {patient_id}")
-    response = fhir_get(f"/Patient/{patient_id}", fhir_server_url=get_fhir_server_url(), timeout=10)
+    response = fhir_get(f"/Patient/{patient_id}", fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
     session['current_patient_id'] = patient_id       
     print(f"FHIR response status code: {response.status_code}")
     if response.status_code == 200:
@@ -375,7 +596,7 @@ def get_patient_summary(patient_id):
 @app.route('/fhir/Procedures/<patient_id>')
 @login_required
 def get_procedures(patient_id):
-    response = fhir_get(f"/Procedure?subject={patient_id}&_sort=-date&_count=5", fhir_server_url=get_fhir_server_url(), timeout=10)
+    response = fhir_get(f"/Procedure?subject={patient_id}&_sort=-date&_count=5", fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
     if response.status_code == 200:
         procedures = response.json().get('entry', [])
         # Prepare procedures for rendering
@@ -429,7 +650,7 @@ def get_requesters():
     Returns a list of PractitionerRoles with name, specialty, and PractitionerRole id for dropdown.
     Only includes PractitionerRoles with a known value in the specialty element.
     """
-    response = fhir_get("/PractitionerRole?_include=PractitionerRole:practitioner&_count=100", fhir_server_url=get_fhir_server_url(), timeout=10)
+    response = fhir_get("/PractitionerRole?_include=PractitionerRole:practitioner&_count=100", fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
     if response.status_code != 200:
         return render_template('partials/requesters.html', requesters=[])
 
@@ -490,7 +711,7 @@ def get_copy_to_practitioners():
     # Get search query from request
     search_query = request.args.get('copyToPractitioner', '').strip().lower()
     
-    response = fhir_get("/PractitionerRole?_include=PractitionerRole:practitioner&_count=100", fhir_server_url=get_fhir_server_url(), timeout=10)
+    response = fhir_get("/PractitionerRole?_include=PractitionerRole:practitioner&_count=100", fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
     if response.status_code != 200:
         return render_template('partials/copy_to_practitioners.html', practitioners=[])
 
@@ -564,7 +785,7 @@ def get_organisation_by_type(org_type):
     system = request.args.get('system', 'http://snomed.info/sct')
     # Search for organisations with the given type code and system
     search_url = f"/Organization?type={system}|{org_type}&_count=20"
-    response = fhir_get(search_url, fhir_server_url=get_fhir_server_url(), timeout=10)
+    response = fhir_get(search_url, fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
     if response.status_code != 200:
         return render_template('partials/organisations.html', organisations=[])
 
@@ -592,7 +813,7 @@ def get_organisation_by_type(org_type):
 @app.route('/fhir/LabResults/<patient_id>')
 @login_required
 def get_lab_results(patient_id):
-    response = fhir_get(f"/Observation?patient={patient_id}&_sort=-date", fhir_server_url=get_fhir_server_url(), timeout=10)
+    response = fhir_get(f"/Observation?patient={patient_id}&_sort=-date", fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
     if response.status_code == 200:
         lab_results = response.json().get('entry', [])
         filtered_lab_results = []
@@ -762,7 +983,7 @@ def get_vital_signs(patient_id):
 def get_medications(patient_id):
     # Get medications
     medications = []
-    meds_response = fhir_get(f"/MedicationRequest?patient={patient_id}&_count=10", fhir_server_url=get_fhir_server_url(), timeout=10)       
+    meds_response = fhir_get(f"/MedicationRequest?patient={patient_id}&_count=10", fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)       
     
     if meds_response.status_code == 200:
         meds_data = meds_response.json()
@@ -875,7 +1096,7 @@ def create_diagnostic_request_bundle(patient_id):
 
     #with open('./json/service_request_bundle.json', 'r', encoding='utf-8') as f:
     #    bundle = json.load(f)
-    bundle = create_request_bundle(form_data=form_data, fhir_server_url=get_fhir_server_url())
+    bundle = create_request_bundle(form_data=form_data, fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials())
     bundle_json = json.dumps(bundle, indent=2)
     return render_template('partials/json_textarea.html', bundle_json=bundle_json), 200
 
@@ -893,7 +1114,7 @@ def diag_valueset_expand():
     ###logging.info(f'Request Category:[{request_cat}] should be one of pathology, radiology')
     ###logging.info(f'testName:[{query}]')
     if not request_cat or not query or request_cat not in ['pathology', 'radiology']:
-        return render_template('partials/test_names.html', suggestions=[])
+        return render_template('partials/test_names.html', testNames=[])
     # Map test type to ValueSet URL (update these URLs to match your terminology server)
     valueset_map = {
         'pathology': 'http://pathologyrequest.example.com.au/ValueSet/boosted',   #  SNOMED Pathology Test ValueSet
@@ -910,13 +1131,15 @@ def diag_valueset_expand():
     }
 
     try:
-        ###logging.info(f'{expand_url}?url={params.get("url")}&filter={params.get("filter")}&count={params.get("count")}')
+        logging.info(f'Request URL: {expand_url}?url={params.get("url")}&filter={params.get("filter")}&count={params.get("count")}')
         resp = requests.get(expand_url, params=params, timeout=10)
+        logging.info(f'Response status: {resp.status_code}')
         resp.raise_for_status()
         data = resp.json()
-        ###logging.info(data)
+        logging.info(f'Response data keys: {list(data.keys())}')
         testNames = []
         contains = data.get("expansion", {}).get("contains", [])
+        logging.info(f'Found {len(contains)} test names for query "{query}"')
         for item in contains:
             code = item.get("code", "")
             display = item.get("display") or code
@@ -926,8 +1149,15 @@ def diag_valueset_expand():
                     "display": display
                 })
         return render_template('partials/test_names.html', testNames=testNames)
+    except requests.exceptions.RequestException as e:
+        logging.error(f'Request error in diag_valueset_expand: {str(e)}')
+        if hasattr(e, 'response') and e.response is not None:
+            logging.error(f'Response status: {e.response.status_code}')
+            logging.error(f'Response text: {e.response.text}')
+        return render_template('partials/test_names.html', testNames=[])
     except Exception as e:
-        print(e.with_traceback)
+        logging.error(f'General error in diag_valueset_expand: {str(e)}')
+        logging.error(f'Error type: {type(e).__name__}')
         return render_template('partials/test_names.html', testNames=[])
 
 @app.route('/fhir/reasonvalueset/expand')

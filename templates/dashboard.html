@@ -70,13 +70,38 @@
                 </div>
             </div>
             <div class="card-footer bg-light">
-                <a href="#" class="text-decoration-none" hx-get="/fhir/Demographics" hx-target="#content">
+                <a href="#" class="text-decoration-none" hx-get="/fhir/Stats" hx-target="#content">
                     <i class="fas fa-arrow-right"></i> View Stats
                 </a>
             </div>
         </div>
     </div>
     
+    <div class="col-md-4 mb-4">
+        <div class="card border-left-warning h-100">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                            Service Requests
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ service_request_count }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-file-medical fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-light">
+                <a href="#" class="text-decoration-none" hx-get="/fhir/Stats" hx-target="#content">
+                    <i class="fas fa-arrow-right"></i> View Requests
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
     <div class="col-md-4 mb-4">
         <div class="card border-left-info h-100">
             <div class="card-body">
@@ -96,6 +121,46 @@
                 <a href="{{ fhir_server_url }}" class="text-decoration-none" target="_blank">
                     <i class="fas fa-external-link-alt"></i> FHIR Server
                 </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-warning text-white">
+                <h6 class="m-0 font-weight-bold">Group Tasks by Status</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Count</th>
+                                <th>Business Status</th>
+                                <th>Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% set status_items = group_task_status_counts.items() | list %}
+                            {% set business_items = group_task_business_status_counts.items() | list %}
+                            {% set max_rows = [status_items|length, business_items|length] | max %}
+                            {% for i in range(max_rows) %}
+                            <tr>
+                                <td>{{ status_items[i][0] if i < status_items|length else '' }}</td>
+                                <td>{{ status_items[i][1] if i < status_items|length else '' }}</td>
+                                <td>{{ business_items[i][0] if i < business_items|length else '' }}</td>
+                                <td>{{ business_items[i][1] if i < business_items|length else '' }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% if max_rows == 0 %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted">No group tasks found</td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>

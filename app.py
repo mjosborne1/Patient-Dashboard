@@ -1375,7 +1375,103 @@ def get_demographics():
             "total_patients": total_patients
         }
         
-        return render_template('demographics.html', demographics=demographics)
+        # Add ServiceRequest and Observation statistics
+        service_request_stats = {}
+        observation_stats = {}
+        
+        # Fetch ServiceRequests with details
+        service_request_response = fhir_get(
+            f"/ServiceRequest?_count=1000", fhir_server_url=get_fhir_server_url(), timeout=15)
+        
+        # Fetch Observations with details  
+        observation_response = fhir_get(
+            f"/Observation?_count=1000", fhir_server_url=get_fhir_server_url(), timeout=15)
+        
+        # Process ServiceRequests
+        service_requests = []
+        if service_request_response.status_code == 200:
+            sr_data = service_request_response.json()
+            service_requests = sr_data.get('entry', [])
+            
+            for entry in service_requests:
+                resource = entry.get('resource', {})
+                status = resource.get('status', 'unknown')
+                
+                # Get code.text
+                code = resource.get('code', {})
+                code_text = code.get('text', 'No description')
+                if not code_text or code_text == 'No description':
+                    if code.get('coding'):
+                        code_text = code['coding'][0].get('display', 'No description')
+                
+                # Get category info
+                category = resource.get('category', [])
+                category_text = 'No category'
+                if category and len(category) > 0:
+                    cat = category[0]
+                    category_text = cat.get('text', '')
+                    if not category_text and cat.get('coding'):
+                        category_text = cat['coding'][0].get('display', 'No category')
+                
+                # Create key for grouping
+                key = (code_text, status, category_text)
+                service_request_stats[key] = service_request_stats.get(key, 0) + 1
+        
+        # Process Observations
+        observations = []
+        if observation_response.status_code == 200:
+            obs_data = observation_response.json()
+            observations = obs_data.get('entry', [])
+            
+            for entry in observations:
+                resource = entry.get('resource', {})
+                status = resource.get('status', 'unknown')
+                
+                # Get code.text
+                code = resource.get('code', {})
+                code_text = code.get('text', 'No description')
+                if not code_text or code_text == 'No description':
+                    if code.get('coding'):
+                        code_text = code['coding'][0].get('display', 'No description')
+                
+                # Get category info
+                category = resource.get('category', [])
+                category_text = 'No category'
+                if category and len(category) > 0:
+                    cat = category[0]
+                    category_text = cat.get('text', '')
+                    if not category_text and cat.get('coding'):
+                        category_text = cat['coding'][0].get('display', 'No category')
+                
+                # Create key for grouping
+                key = (code_text, status, category_text)
+                observation_stats[key] = observation_stats.get(key, 0) + 1
+        
+        # Convert to sorted lists for template (sort by count descending)
+        sr_stats_list = []
+        for (code_text, status, category_text), count in sorted(service_request_stats.items(), key=lambda x: x[1], reverse=True):
+            sr_stats_list.append({
+                'code_text': code_text,
+                'status': status,
+                'category_text': category_text,
+                'count': count
+            })
+        
+        obs_stats_list = []
+        for (code_text, status, category_text), count in sorted(observation_stats.items(), key=lambda x: x[1], reverse=True):
+            obs_stats_list.append({
+                'code_text': code_text, 
+                'status': status,
+                'category_text': category_text,
+                'count': count
+            })
+        
+        return render_template('demographics.html', 
+                             demographics=demographics,
+                             service_request_stats=sr_stats_list,
+                             observation_stats=obs_stats_list,
+                             sr_total=len(service_requests),
+                             obs_total=len(observations))
     else:
         return jsonify({"error": "Failed to fetch patient demographics"}), 500
 
@@ -1391,39 +1487,82 @@ def get_dashboard():
     observation_response = fhir_get(
         f"/Observation?_summary=count", fhir_server_url=get_fhir_server_url(), timeout=10)  
     
+    # Fetch group tasks with tag filter
+    group_tasks_response = fhir_get(
+        f"/Task?_tag=http://terminology.hl7.org.au/CodeSystem/resource-tag|fulfilment-task-group", 
+        fhir_server_url=get_fhir_server_url(), timeout=10)
+    
+    # Fetch ServiceRequests count
+    service_requests_response = fhir_get(
+        f"/ServiceRequest?_summary=count", fhir_server_url=get_fhir_server_url(), timeout=10)
+    
     patient_count = 0
     observation_count = 0
+    service_request_count = 0
     gender_counts = {"male": 0, "female": 0, "other": 0, "unknown": 0}
+    group_task_status_counts = {}
+    group_task_business_status_counts = {}
     recent_patients = []
     
     if patient_response.status_code == 200:
         patient_data = patient_response.json()
         patients = patient_data.get('entry', [])
-        patient_count = len(patients)
+        patient_count = len(patients)     
+                
+        # Get recent patients and count genders
+        recent_patients_data = patients[:5]  # Just take the first 5 for simplicity
+        recent_patients = process_patient_results(recent_patients_data)
         
-        # Process gender counts
+        # Count genders for all patients
         for patient_entry in patients:
             resource = patient_entry.get('resource', {})
-            
-            # Count genders
             gender = resource.get('gender', '').lower()
             if gender in gender_counts:
                 gender_counts[gender] += 1
             else:
                 gender_counts["unknown"] += 1
-                
-        # Get recent patients
-        recent_patients_data = patients[:5]  # Just take the first 5 for simplicity
-        recent_patients = process_patient_results(recent_patients_data)
     
     if observation_response.status_code == 200:
         observation_data = observation_response.json()
         observation_count = observation_data.get('total', 0)
     
+    if service_requests_response.status_code == 200:
+        service_request_data = service_requests_response.json()
+        service_request_count = service_request_data.get('total', 0)
+    
+    # Process group tasks counts by status and businessStatus
+    if group_tasks_response.status_code == 200:
+        group_tasks_data = group_tasks_response.json()
+        group_tasks = group_tasks_data.get('entry', [])
+        
+        for task_entry in group_tasks:
+            task_resource = task_entry.get('resource', {})
+            
+            # Count by status
+            status = task_resource.get('status', 'unknown')
+            group_task_status_counts[status] = group_task_status_counts.get(status, 0) + 1
+            
+            # Count by businessStatus
+            business_status = task_resource.get('businessStatus', {})
+            if business_status:
+                # Get text or first coding display
+                business_status_text = business_status.get('text', '')
+                if not business_status_text and business_status.get('coding'):
+                    business_status_text = business_status['coding'][0].get('display', 'unknown')
+                if not business_status_text:
+                    business_status_text = 'unknown'
+            else:
+                business_status_text = 'no-business-status'
+            
+            group_task_business_status_counts[business_status_text] = group_task_business_status_counts.get(business_status_text, 0) + 1
+
     dashboard_data = {
         'patient_count': patient_count,
         'observation_count': observation_count,
+        'service_request_count': service_request_count,
         'gender_counts': gender_counts,
+        'group_task_status_counts': group_task_status_counts,
+        'group_task_business_status_counts': group_task_business_status_counts,
         'recent_patients': recent_patients,
         'fhir_server_url': get_fhir_server_url()
     }
@@ -1472,6 +1611,109 @@ def basic_auth_login():
         return jsonify({'success': True})
     else:
         return jsonify({'success': False, 'error': 'Invalid login code or password'}), 401
+
+@app.route('/fhir/Stats')
+@login_required
+def get_stats():
+    """Get statistics page showing ServiceRequest and Observation summaries"""
+    
+    # Fetch ServiceRequests with details
+    service_request_response = fhir_get(
+        f"/ServiceRequest?_count=1000", fhir_server_url=get_fhir_server_url(), timeout=15)
+    
+    # Fetch Observations with details  
+    observation_response = fhir_get(
+        f"/Observation?_count=1000", fhir_server_url=get_fhir_server_url(), timeout=15)
+    
+    service_request_stats = {}
+    observation_stats = {}
+    
+    # Process ServiceRequests
+    if service_request_response.status_code == 200:
+        sr_data = service_request_response.json()
+        service_requests = sr_data.get('entry', [])
+        
+        for entry in service_requests:
+            resource = entry.get('resource', {})
+            status = resource.get('status', 'unknown')
+            
+            # Get code.text
+            code = resource.get('code', {})
+            code_text = code.get('text', 'No description')
+            if not code_text or code_text == 'No description':
+                if code.get('coding'):
+                    code_text = code['coding'][0].get('display', 'No description')
+            
+            # Get category info
+            category = resource.get('category', [])
+            category_text = 'No category'
+            if category and len(category) > 0:
+                cat = category[0]
+                category_text = cat.get('text', '')
+                if not category_text and cat.get('coding'):
+                    category_text = cat['coding'][0].get('display', 'No category')
+            
+            # Create key for grouping
+            key = (code_text, status, category_text)
+            service_request_stats[key] = service_request_stats.get(key, 0) + 1
+    
+    # Process Observations
+    if observation_response.status_code == 200:
+        obs_data = observation_response.json()
+        observations = obs_data.get('entry', [])
+        
+        for entry in observations:
+            resource = entry.get('resource', {})
+            status = resource.get('status', 'unknown')
+            
+            # Get code.text
+            code = resource.get('code', {})
+            code_text = code.get('text', 'No description')
+            if not code_text or code_text == 'No description':
+                if code.get('coding'):
+                    code_text = code['coding'][0].get('display', 'No description')
+            
+            # Get category info
+            category = resource.get('category', [])
+            category_text = 'No category'
+            if category and len(category) > 0:
+                cat = category[0]
+                category_text = cat.get('text', '')
+                if not category_text and cat.get('coding'):
+                    category_text = cat['coding'][0].get('display', 'No category')
+            
+            # Create key for grouping
+            key = (code_text, status, category_text)
+            observation_stats[key] = observation_stats.get(key, 0) + 1
+    
+    # Convert to sorted lists for template
+    sr_stats_list = []
+    for (code_text, status, category_text), count in sorted(service_request_stats.items()):
+        sr_stats_list.append({
+            'code_text': code_text,
+            'status': status,
+            'category_text': category_text,
+            'count': count
+        })
+    
+    obs_stats_list = []
+    for (code_text, status, category_text), count in sorted(observation_stats.items()):
+        obs_stats_list.append({
+            'code_text': code_text, 
+            'status': status,
+            'category_text': category_text,
+            'count': count
+        })
+    
+    stats_data = {
+        'service_request_stats': sr_stats_list,
+        'observation_stats': obs_stats_list,
+        'sr_total': len(service_requests) if service_request_response.status_code == 200 else 0,
+        'obs_total': len(observations) if observation_response.status_code == 200 else 0,
+        'fhir_server_url': get_fhir_server_url()
+    }
+    
+    return render_template('stats.html', **stats_data)
 
 if __name__ == '__main__' and os.environ.get('TESTING') != 'true':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'

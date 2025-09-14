@@ -1,0 +1,141 @@
+<div class="row">
+    <div class="col-12">
+        <h2 class="text-primary mb-4"><i class="fas fa-chart-bar"></i> Statistics</h2>
+        <p class="text-muted">Summary of ServiceRequests and Observations grouped by code and status</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-warning text-white">
+                <h5 class="m-0 font-weight-bold">
+                    <i class="fas fa-file-medical"></i> ServiceRequests Summary
+                    <span class="badge badge-light ml-2">{{ sr_total }} total</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="thead-light">
+                            <tr>
+                                <th>Code/Description</th>
+                                <th>Category</th>
+                                <th>Status</th>
+                                <th class="text-center">Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in service_request_stats %}
+                            <tr>
+                                <td>
+                                    <div class="text-truncate" style="max-width: 300px;" title="{{ item.code_text }}">
+                                        {{ item.code_text }}
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="text-dark">{{ item.category_text }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge badge-{% if item.status == 'completed' %}success{% elif item.status == 'active' %}primary{% elif item.status == 'draft' %}secondary{% else %}dark{% endif %}">
+                                        {{ item.status }}
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    <strong>{{ item.count }}</strong>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% if service_request_stats|length == 0 %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted">No ServiceRequests found</td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h5 class="m-0 font-weight-bold">
+                    <i class="fas fa-clipboard-list"></i> Observations Summary
+                    <span class="badge badge-light ml-2">{{ obs_total }} total</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="thead-light">
+                            <tr>
+                                <th>Code/Description</th>
+                                <th>Category</th>
+                                <th>Status</th>
+                                <th class="text-center">Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in observation_stats %}
+                            <tr>
+                                <td>
+                                    <div class="text-truncate" style="max-width: 300px;" title="{{ item.code_text }}">
+                                        {{ item.code_text }}
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="text-dark">{{ item.category_text }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge badge-{% if item.status == 'final' %}success{% elif item.status == 'preliminary' %}primary{% elif item.status == 'registered' %}secondary{% else %}dark{% endif %}">
+                                        {{ item.status }}
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    <strong>{{ item.count }}</strong>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% if observation_stats|length == 0 %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted">No Observations found</td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header bg-info text-white">
+                <h6 class="m-0 font-weight-bold">
+                    <i class="fas fa-info-circle"></i> Server Information
+                </h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-1"><strong>FHIR Server:</strong> 
+                    <a href="{{ fhir_server_url }}" target="_blank" class="text-decoration-none">
+                        {{ fhir_server_url }}
+                        <i class="fas fa-external-link-alt ml-1"></i>
+                    </a>
+                </p>
+                <p class="mb-0 text-muted"><small>Data retrieved from the currently selected FHIR server</small></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12 text-center">
+        <button class="btn btn-secondary" hx-get="/fhir/Dashboard" hx-target="#content">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </button>
+    </div>
+</div>

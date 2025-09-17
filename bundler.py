@@ -234,10 +234,26 @@ def generate_narrative_text(resource):
             attachment = content[0].get("attachment", {})
             title = attachment.get("title", "")
             content_type = attachment.get("contentType", "")
+            data = attachment.get("data", "")
+            
             if title:
                 narrative_text += f"<p><strong>Title:</strong> {title}</p>"
             if content_type:
                 narrative_text += f"<p><strong>Content Type:</strong> {content_type}</p>"
+            
+            # Decode and display the clinical context if it's base64 encoded text
+            if data and content_type == "text/plain":
+                try:
+                    import base64
+                    decoded_content = base64.b64decode(data).decode('utf-8')
+                    # Escape HTML characters for safe display
+                    import html
+                    escaped_content = html.escape(decoded_content)
+                    narrative_text += f"<p><strong>Clinical Context:</strong></p>"
+                    narrative_text += f"<div style='border: 1px solid #ccc; padding: 10px; margin: 5px 0; background-color: #f9f9f9;'>{escaped_content}</div>"
+                except Exception:
+                    # If decoding fails, just show that content is present
+                    narrative_text += f"<p><strong>Content:</strong> Encoded clinical notes</p>"
     
     elif resource_type == "CommunicationRequest":
         status = resource.get("status", "")

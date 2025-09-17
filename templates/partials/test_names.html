@@ -1,11 +1,11 @@
 {% if testNames %}
 {% for test in testNames %}
-<a href="#" class="dropdown-item test-option" data-code="{{ test.code }}" data-display="{{ test.display }}">
+<div class="dropdown-item test-option" data-code="{{ test.code }}" data-display="{{ test.display }}" style="cursor: pointer;">
     <div class="d-flex justify-content-between align-items-center">
         <span>{{ test.display }}</span>
         <small class="text-muted">{{ test.code }}</small>
     </div>
-</a>
+</div>
 {% endfor %}
 {% else %}
 <div class="dropdown-item-text text-muted">

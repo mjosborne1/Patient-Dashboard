@@ -427,6 +427,8 @@
 <script>
 window.selectedTests = Array.isArray(window.selectedTests) ? window.selectedTests : [];
 
+
+
 function renderSelectedTests() {
     const display = document.getElementById('selectedTestsDisplay');
     const hidden = document.getElementById('selectedTests');
@@ -449,6 +451,35 @@ function renderSelectedTests() {
     }
     
     hidden.value = JSON.stringify(window.selectedTests);
+}
+
+// Function to add a specific test with known code and display (used when clicking dropdown options)
+function addSpecificTestSelection(code, display) {
+    if (display && Array.isArray(window.selectedTests)) {
+        // Check if we already have this test (by display name)
+        const existingTest = window.selectedTests.find(test => 
+            (typeof test === 'string' ? test : test.display) === display
+        );
+        
+        if (!existingTest) {
+            // Store as object with code, display, and display_sequence
+            // The sequence is 1-indexed based on the order of addition
+            const newTest = {
+                code: code || '',
+                display: display,
+                display_sequence: window.selectedTests.length + 1
+            };
+            
+            window.selectedTests.push(newTest);
+            renderSelectedTests();
+            
+            // Show brief success feedback
+            showTestAddedFeedback(display);
+        } else {
+            // Show feedback that test is already added
+            showTestAlreadyAddedFeedback(display);
+        }
+    }
 }
 
 function addTestSelection() {
@@ -634,21 +665,8 @@ document.body.addEventListener('htmx:afterRequest', function(evt) {
                 testNameInput.style.borderColor = '#198754';
                 testNameInput.style.boxShadow = '0 0 0 0.2rem rgba(25, 135, 84, 0.25)';
                 
-                // Add click handlers to test options
-                testOptions.forEach(option => {
-                    option.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        const display = this.getAttribute('data-display');
-                        const code = this.getAttribute('data-code');
-                        
-                        // Set the input value and trigger test addition
-                        testNameInput.value = display;
-                        addTestSelection();
-                        
-                        // Hide dropdown
-                        hideTestDropdown();
-                    });
-                });
+                // Remove any existing onclick handlers to prevent conflicts
+                dropdown.onclick = null;
                 
                 // Hide results count after 3 seconds
                 setTimeout(() => {
@@ -688,15 +706,77 @@ function hideTestDropdown() {
     }
 }
 
-// Hide dropdown when clicking outside
-document.addEventListener('click', function(e) {
+// Remove any existing test option click handlers to prevent conflicts
+document.removeEventListener('click', handleTestOptionClick, true);
+
+// Define a single, isolated test option click handler
+function handleTestOptionClick(e) {
+    // Find the closest test-option element (in case user clicked on inner elements)
+    const testOption = e.target.closest('.test-option');
+    
+    if (testOption) {
+        // Completely stop all event processing
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        
+        // Get the exact attributes from the clicked element
+        let display = testOption.getAttribute('data-display');
+        let code = testOption.getAttribute('data-code');
+        
+        // Fallback: if data-display is missing, try to extract from the element's text content
+        if (!display || display === 'undefined' || display === 'null') {
+            // Try to find the display text from the element content
+            const textSpan = testOption.querySelector('span');
+            if (textSpan) {
+                display = textSpan.textContent.trim();
+            } else {
+                // Fallback to full text content
+                const fullText = testOption.textContent.trim();
+                // Split by whitespace and take everything except the last part (which might be the code)
+                const parts = fullText.split(/\s+/);
+                if (parts.length > 1) {
+                    display = parts.slice(0, -1).join(' ');
+                } else {
+                    display = fullText;
+                }
+            }
+        }
+        
+        // Fallback for code if missing
+        if (!code || code === 'undefined' || code === 'null') {
+            const codeSpan = testOption.querySelector('small.text-muted');
+            if (codeSpan) {
+                code = codeSpan.textContent.trim();
+            }
+        }
+        
+        // Directly add the clicked test with its specific code and display
+        if (display && display !== 'undefined' && display !== 'null') {
+            addSpecificTestSelection(code, display);
+            
+            // Clear input and hide dropdown
+            const testNameInput = document.getElementById('testName');
+            if (testNameInput) {
+                testNameInput.value = '';
+            }
+            hideTestDropdown();
+        }
+        
+        return false; // Extra safety to prevent any further event handling
+    }
+    
+    // Hide dropdown when clicking outside
     const testNameInput = document.getElementById('testName');
     const dropdown = document.getElementById('testNameDropdown');
     
     if (testNameInput && dropdown && !testNameInput.contains(e.target) && !dropdown.contains(e.target)) {
         hideTestDropdown();
     }
-});
+}
+
+// Add the isolated handler with capture phase
+document.addEventListener('click', handleTestOptionClick, true);
 
 // Add CSS for highlighted dropdown items
 const style = document.createElement('style');

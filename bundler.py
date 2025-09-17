@@ -25,16 +25,23 @@ def _build_servicerequest_code(test):
     If no code is provided, only include text field (no coding array).
     If code is provided, include both coding and text.
     """
+    import logging
+    logging.info(f"_build_servicerequest_code called with test: {test}")
+    
     test_code = test.get("code", "").strip() if test.get("code") else ""
     test_display = test.get("display", "")
     
+    logging.info(f"Extracted: code='{test_code}', display='{test_display}'")
+    
     if not test_code:
         # No code provided - only use text field (free-text test)
+        logging.info("No code provided, returning text-only format")
         return {
             "text": test_display
         }
     else:
         # Code provided - include both coding and text
+        logging.info("Code provided, returning coding + text format")
         return {
             "coding": [{
                 "system": "http://snomed.info/sct",  
@@ -319,26 +326,35 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
 
     # Extract test and reason data
     tests = form_data.get('selectedTests', [])
+    logging.info(f"Raw selectedTests from form: {tests}")
+    logging.info(f"selectedTests type: {type(tests)}")
+    
     if isinstance(tests, str):
         try:
             # Try to safely parse the string representation to a list
             import json
             tests = json.loads(tests)
+            logging.info(f"Successfully parsed tests as JSON: {tests}")
         except json.JSONDecodeError:
             # If it's not valid JSON, try a more forgiving approach
             try:
                 import ast
                 tests = ast.literal_eval(tests)
+                logging.info(f"Successfully parsed tests using ast.literal_eval: {tests}")
             except (ValueError, SyntaxError):
+                logging.warning("Failed to parse tests string, defaulting to empty list")
                 tests = []
 
     # Ensure each test is a dictionary with the required keys
     processed_tests = []
-    for test in tests:
+    for i, test in enumerate(tests):
+        logging.info(f"Processing test #{i}: {test} (type: {type(test)})")
         if isinstance(test, dict) and "code" in test and "display" in test:
+            logging.info(f"Test #{i} has code='{test.get('code')}' and display='{test.get('display')}'")
             processed_tests.append(test)
         elif isinstance(test, str):
             # If it's just a string (perhaps just the display name), create a simple dict
+            logging.warning(f"Test #{i} is just a string, creating dict with empty code")
             processed_tests.append({"code": "", "display": test})
         else:
             # Log unexpected test format
@@ -346,6 +362,7 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
 
     # Replace original tests list with processed version
     tests = processed_tests
+    logging.info(f"Final processed tests: {tests}")
             
     reasons = form_data.get('selectedReasons', [])
     logging.debug(f"Raw selectedReasons from form: {reasons}")

@@ -464,13 +464,30 @@ function addTestSelection() {
             // Try to find the corresponding option in the dropdown to get the code
             const dropdown = document.getElementById('testNameDropdown');
             let testCode = '';
+            let matchedDisplay = value;
             
             if (dropdown) {
                 const options = dropdown.querySelectorAll('.test-option');
+                
+                // First try exact match with display text
                 for (let option of options) {
-                    if (option.getAttribute('data-display') === value) {
+                    const display = option.getAttribute('data-display');
+                    if (display && display.toLowerCase() === value.toLowerCase()) {
                         testCode = option.getAttribute('data-code') || '';
+                        matchedDisplay = display;
                         break;
+                    }
+                }
+                
+                // If no exact match, try partial match (user typed partial text)
+                if (!testCode) {
+                    for (let option of options) {
+                        const display = option.getAttribute('data-display');
+                        if (display && display.toLowerCase().includes(value.toLowerCase()) && value.length >= 3) {
+                            testCode = option.getAttribute('data-code') || '';
+                            matchedDisplay = display;
+                            break;
+                        }
                     }
                 }
             }
@@ -479,7 +496,7 @@ function addTestSelection() {
             // The sequence is 1-indexed based on the order of addition
             window.selectedTests.push({
                 code: testCode,
-                display: value,
+                display: matchedDisplay,
                 display_sequence: window.selectedTests.length + 1
             });
             renderSelectedTests();
@@ -489,7 +506,7 @@ function addTestSelection() {
             hideTestDropdown();
             
             // Show brief success feedback
-            showTestAddedFeedback(value);
+            showTestAddedFeedback(matchedDisplay);
         } else {
             // Show feedback that test is already added
             showTestAlreadyAddedFeedback(value);

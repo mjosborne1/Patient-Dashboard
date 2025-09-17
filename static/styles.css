@@ -219,7 +219,7 @@ header.with-sidebar {
     position: fixed;
     top: 0;
     z-index: 99;
-    background-color: var(--tropical-primary) !important;
+    background-color: var(--tropical-dark) !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     transition: all 0.3s ease-in-out;
 }
@@ -331,7 +331,9 @@ header.with-sidebar {
 .loading-step.completed {
     color: var(--tropical-success);
 }
-
+header.bg-dark {
+    background-color: var(--tropical-dark)
+}
 #dashboard-progress {
     width: 0%;
     background-color: var(--tropical-primary);
@@ -437,4 +439,14 @@ header.with-sidebar {
 /* Text color for category display */
 .text-dark {
     color: #343a40 !important;
+}
+
+/* Override heading colors to match sidebar (black) */
+h1.text-primary,
+h2.text-primary,
+h3.text-primary,
+h4.text-primary,
+h5.text-primary,
+h6.text-primary {
+    color: var(--tropical-dark) !important;
 }

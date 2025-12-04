@@ -495,30 +495,13 @@ function addTestSelection() {
             // Try to find the corresponding option in the dropdown to get the code
             const dropdown = document.getElementById('testNameDropdown');
             let testCode = '';
-            let matchedDisplay = value;
             
             if (dropdown) {
                 const options = dropdown.querySelectorAll('.test-option');
-                
-                // First try exact match with display text
                 for (let option of options) {
-                    const display = option.getAttribute('data-display');
-                    if (display && display.toLowerCase() === value.toLowerCase()) {
+                    if (option.getAttribute('data-display') === value) {
                         testCode = option.getAttribute('data-code') || '';
-                        matchedDisplay = display;
                         break;
-                    }
-                }
-                
-                // If no exact match, try partial match (user typed partial text)
-                if (!testCode) {
-                    for (let option of options) {
-                        const display = option.getAttribute('data-display');
-                        if (display && display.toLowerCase().includes(value.toLowerCase()) && value.length >= 3) {
-                            testCode = option.getAttribute('data-code') || '';
-                            matchedDisplay = display;
-                            break;
-                        }
                     }
                 }
             }
@@ -527,7 +510,7 @@ function addTestSelection() {
             // The sequence is 1-indexed based on the order of addition
             window.selectedTests.push({
                 code: testCode,
-                display: matchedDisplay,
+                display: value,
                 display_sequence: window.selectedTests.length + 1
             });
             renderSelectedTests();
@@ -537,7 +520,7 @@ function addTestSelection() {
             hideTestDropdown();
             
             // Show brief success feedback
-            showTestAddedFeedback(matchedDisplay);
+            showTestAddedFeedback(value);
         } else {
             // Show feedback that test is already added
             showTestAlreadyAddedFeedback(value);
@@ -665,8 +648,44 @@ document.body.addEventListener('htmx:afterRequest', function(evt) {
                 testNameInput.style.borderColor = '#198754';
                 testNameInput.style.boxShadow = '0 0 0 0.2rem rgba(25, 135, 84, 0.25)';
                 
-                // Remove any existing onclick handlers to prevent conflicts
-                dropdown.onclick = null;
+                // Attach targeted click handlers to the dropdown
+                attachTestOptionClickHandlers();
+                
+                // Add direct onclick handlers to each option for maximum compatibility  
+                const directTestOptions = dropdown.querySelectorAll('.test-option');
+                directTestOptions.forEach((option) => {
+                    // Remove any existing handlers first
+                    option.onclick = null;
+                    option.removeAttribute('onclick');
+                    
+                    // Add multiple event types for maximum compatibility
+                    ['click', 'mousedown', 'touchstart'].forEach(eventType => {
+                        option.addEventListener(eventType, function(e) {
+                            // Only process click and touchstart for actual selection
+                            if (eventType === 'click' || eventType === 'touchstart') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                e.stopImmediatePropagation();
+                                
+                                const display = this.getAttribute('data-display');
+                                const code = this.getAttribute('data-code');
+                                
+                                if (display) {
+                                    addSpecificTestSelection(code, display);
+                                    
+                                    // Clear input and hide dropdown
+                                    const testNameInput = document.getElementById('testName');
+                                    if (testNameInput) {
+                                        testNameInput.value = '';
+                                    }
+                                    hideTestDropdown();
+                                }
+                                
+                                return false;
+                            }
+                        }, true); // Use capture phase
+                    });
+                });
                 
                 // Hide results count after 3 seconds
                 setTimeout(() => {
@@ -706,77 +725,74 @@ function hideTestDropdown() {
     }
 }
 
-// Remove any existing test option click handlers to prevent conflicts
-document.removeEventListener('click', handleTestOptionClick, true);
-
-// Define a single, isolated test option click handler
-function handleTestOptionClick(e) {
-    // Find the closest test-option element (in case user clicked on inner elements)
-    const testOption = e.target.closest('.test-option');
+// Define a more targeted test option click handler that attaches directly to dropdown
+function attachTestOptionClickHandlers() {
+    const dropdown = document.getElementById('testNameDropdown');
+    if (!dropdown) {
+        return;
+    }
     
-    if (testOption) {
-        // Completely stop all event processing
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
+    // Remove any existing click handler on the dropdown
+    dropdown.onclick = null;
+
+    // Use event delegation on the dropdown container
+    dropdown.addEventListener('click', function(e) {
+        // Find the closest test-option element (in case user clicked on inner elements)
+        const testOption = e.target.closest('.test-option');
         
-        // Get the exact attributes from the clicked element
-        let display = testOption.getAttribute('data-display');
-        let code = testOption.getAttribute('data-code');
-        
-        // Fallback: if data-display is missing, try to extract from the element's text content
-        if (!display || display === 'undefined' || display === 'null') {
-            // Try to find the display text from the element content
-            const textSpan = testOption.querySelector('span');
-            if (textSpan) {
-                display = textSpan.textContent.trim();
-            } else {
-                // Fallback to full text content
-                const fullText = testOption.textContent.trim();
-                // Split by whitespace and take everything except the last part (which might be the code)
-                const parts = fullText.split(/\s+/);
-                if (parts.length > 1) {
-                    display = parts.slice(0, -1).join(' ');
+        if (testOption) {
+            // Completely stop all event processing
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            
+            // Get the exact attributes from the clicked element
+            let display = testOption.getAttribute('data-display');
+            let code = testOption.getAttribute('data-code');
+            
+            // Fallback: if data-display is missing, try to extract from the element's text content
+            if (!display || display === 'undefined' || display === 'null') {
+                // Try to find the display text from the element content
+                const textSpan = testOption.querySelector('span');
+                if (textSpan) {
+                    display = textSpan.textContent.trim();
                 } else {
-                    display = fullText;
+                    // Fallback to full text content
+                    const fullText = testOption.textContent.trim();
+                    // Split by whitespace and take everything except the last part (which might be the code)
+                    const parts = fullText.split(/\s+/);
+                    if (parts.length > 1) {
+                        display = parts.slice(0, -1).join(' ');
+                    } else {
+                        display = fullText;
+                    }
                 }
             }
-        }
-        
-        // Fallback for code if missing
-        if (!code || code === 'undefined' || code === 'null') {
-            const codeSpan = testOption.querySelector('small.text-muted');
-            if (codeSpan) {
-                code = codeSpan.textContent.trim();
-            }
-        }
-        
-        // Directly add the clicked test with its specific code and display
-        if (display && display !== 'undefined' && display !== 'null') {
-            addSpecificTestSelection(code, display);
             
-            // Clear input and hide dropdown
-            const testNameInput = document.getElementById('testName');
-            if (testNameInput) {
-                testNameInput.value = '';
+            // Fallback for code if missing
+            if (!code || code === 'undefined' || code === 'null') {
+                const codeSpan = testOption.querySelector('small.text-muted');
+                if (codeSpan) {
+                    code = codeSpan.textContent.trim();
+                }
             }
-            hideTestDropdown();
+            
+            // Directly add the clicked test with its specific code and display
+            if (display && display !== 'undefined' && display !== 'null') {
+                addSpecificTestSelection(code, display);
+                
+                // Clear input and hide dropdown
+                const testNameInput = document.getElementById('testName');
+                if (testNameInput) {
+                    testNameInput.value = '';
+                }
+                hideTestDropdown();
+            }
+            
+            return false; // Extra safety to prevent any further event handling
         }
-        
-        return false; // Extra safety to prevent any further event handling
-    }
-    
-    // Hide dropdown when clicking outside
-    const testNameInput = document.getElementById('testName');
-    const dropdown = document.getElementById('testNameDropdown');
-    
-    if (testNameInput && dropdown && !testNameInput.contains(e.target) && !dropdown.contains(e.target)) {
-        hideTestDropdown();
-    }
+    }, true); // Use capture phase
 }
-
-// Add the isolated handler with capture phase
-document.addEventListener('click', handleTestOptionClick, true);
 
 // Add CSS for highlighted dropdown items
 const style = document.createElement('style');

@@ -1044,6 +1044,13 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
             "focus": {
                 "reference": f"urn:uuid:{sr_id}"
             },
+            "priority" : request_priority,
+            "code" : {
+                "coding" : [{
+                "system" : "http://hl7.org/fhir/CodeSystem/task-code",
+                "code" : "fulfill"
+                }]
+            },
             "for": patient_reference,
             # supportingInfo goes here
             "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
@@ -1104,19 +1111,14 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                     "status": "active",
                     "category": [{
                         "coding": [{
-                            "system": "http://terminology.hl7.org/CodeSystem/communication-category",
-                            "code": "notification"
+                            "system" : "http://terminology.hl7.org.au/CodeSystem/communication-request-category",
+                            "code" : "copyto-reports",
+                            "display" : "Copy To Reports"
                         }]
                     }],
                     "subject": patient_reference,
                     "about": [{"reference": f"urn:uuid:{sr['id']}"} for sr in service_requests],
                     "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
-                    "reasonCode": [{
-                        "coding": [{
-                            "system": "http://terminology.hl7.org.au/CodeSystem/communicationrequest-reason",
-                            "code": "copyto"
-                        }]
-                    }],
                     "recipient": [{
                         "reference": f"PractitionerRole/{recipient_id}"
                     }],
@@ -1219,11 +1221,17 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
             },
             "status": "requested",
             "intent": "order",
-            "description": f"{request_category} Order Group",
+            "priority" : request_priority,
+            "code" : {
+                "coding" : [{
+                "system" : "http://hl7.org/fhir/CodeSystem/task-code",
+                "code" : "fulfill"
+                }]
+            },
             "for": patient_reference,
+            "authoredOn": get_localtime_bne(),
             "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
-            "owner": organization_reference if organization_reference else {"reference": "Organization/unknown"},
-            "authoredOn": get_localtime_bne()
+            "owner": organization_reference if organization_reference else {"reference": "Organization/unknown"}
         }
             
         # Add Task group to bundle - LAST entry for filler processing trigger

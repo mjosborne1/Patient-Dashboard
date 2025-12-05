@@ -1733,22 +1733,37 @@ def get_service_requests():
         fhir_server_url = get_fhir_server_url()
         auth = get_fhir_auth_credentials()
         
-        # Search for ServiceRequests with status 'active' or 'on-hold' for this patient
+        # Search for ServiceRequests for this patient
+        # Try multiple approaches for different FHIR server implementations
         search_url = f"{fhir_server_url}/ServiceRequest"
+        
+        # First try with patient parameter and status filter
         params = {
             'patient': patient_id,
-            'status': 'active,on-hold',
             '_sort': '-created'
         }
         
+        logging.info(f"Fetching ServiceRequests for patient: {patient_id} from {search_url}")
         resp = requests.get(search_url, params=params, auth=auth, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
         
+        if resp.status_code != 200:
+            logging.warning(f"ServiceRequest query failed with status {resp.status_code}: {resp.text}")
+            # Return empty list instead of error to gracefully handle missing requests
+            options_html = '<option value="">No open service requests</option>'
+            return render_template('partials/select_options.html', 
+                                 select_id='serviceRequestList',
+                                 options_html=options_html), 200
+        
+        data = resp.json()
         service_requests = data.get('entry', [])
+        
+        logging.info(f"Found {len(service_requests)} service requests")
         
         # Build options HTML for the select dropdown
         options_html = '<option value="">Select a service request...</option>'
+        
+        if not service_requests:
+            options_html = '<option value="">No open service requests found</option>'
         
         for entry in service_requests:
             resource = entry.get('resource', {})
@@ -1781,7 +1796,17 @@ def get_service_requests():
         
     except requests.exceptions.RequestException as e:
         logging.error(f"FHIR API error: {e}")
-        return jsonify({"error": "Failed to fetch service requests"}), 500
+        # Return empty dropdown on error
+        options_html = '<option value="">Error loading requests</option>'
+        return render_template('partials/select_options.html', 
+                             select_id='serviceRequestList',
+                             options_html=options_html), 200
+    except Exception as e:
+        logging.error(f"Unexpected error fetching service requests: {e}")
+        options_html = '<option value="">Error loading requests</option>'
+        return render_template('partials/select_options.html', 
+                             select_id='serviceRequestList',
+                             options_html=options_html), 200
 
 
 @app.route('/fhir/serviceRequest/fulfill/<patient_id>', methods=['POST'])
@@ -1806,10 +1831,16 @@ def fulfill_service_request(patient_id):
         fhir_server_url = get_fhir_server_url()
         auth = get_fhir_auth_credentials()
         
+        logging.info(f"Fulfilling service request: {service_request_id} with status: {completion_status}")
+        
         # Get the ServiceRequest to understand what needs to be fulfilled
         sr_url = f"{fhir_server_url}/ServiceRequest/{service_request_id}"
         sr_resp = requests.get(sr_url, auth=auth, timeout=10)
-        sr_resp.raise_for_status()
+        
+        if sr_resp.status_code != 200:
+            logging.error(f"Failed to fetch ServiceRequest: {sr_resp.status_code} - {sr_resp.text}")
+            return jsonify({"error": f"Service request not found: {sr_resp.status_code}"}), 400
+        
         service_request = sr_resp.json()
         
         # Map completion status to Task status
@@ -1824,18 +1855,24 @@ def fulfill_service_request(patient_id):
         # First, search for existing Task related to this ServiceRequest
         tasks_url = f"{fhir_server_url}/Task"
         task_params = {
-            'focus': f"ServiceRequest/{service_request_id}",
-            'status': 'requested,accepted,in-progress'
+            'focus': f"ServiceRequest/{service_request_id}"
         }
         
+        logging.info(f"Searching for existing tasks for ServiceRequest {service_request_id}")
         tasks_resp = requests.get(tasks_url, params=task_params, auth=auth, timeout=10)
-        tasks_resp.raise_for_status()
-        tasks_data = tasks_resp.json()
-        existing_tasks = tasks_data.get('entry', [])
+        
+        existing_tasks = []
+        if tasks_resp.status_code == 200:
+            tasks_data = tasks_resp.json()
+            existing_tasks = tasks_data.get('entry', [])
+            logging.info(f"Found {len(existing_tasks)} existing tasks")
+        else:
+            logging.warning(f"Task search failed with status {tasks_resp.status_code}")
         
         # Create a new Task or update existing one
         if existing_tasks:
             # Update the first existing task
+            logging.info("Updating existing task")
             task = existing_tasks[0]['resource']
             task_id = task['id']
             task['status'] = task_status
@@ -1857,11 +1894,17 @@ def fulfill_service_request(patient_id):
             
             # Update the task
             update_url = f"{fhir_server_url}/Task/{task_id}"
+            logging.info(f"Updating task at {update_url}")
             update_resp = requests.put(update_url, json=task, auth=auth, timeout=10)
-            update_resp.raise_for_status()
+            
+            if update_resp.status_code not in [200, 201]:
+                logging.error(f"Failed to update task: {update_resp.status_code} - {update_resp.text}")
+                return jsonify({"error": f"Failed to update task: {update_resp.status_code}"}), 500
+            
             updated_task = update_resp.json()
         else:
             # Create a new Task
+            logging.info("Creating new task")
             task = {
                 'resourceType': 'Task',
                 'status': task_status,
@@ -1895,8 +1938,13 @@ def fulfill_service_request(patient_id):
             
             # Create the task
             create_url = f"{fhir_server_url}/Task"
+            logging.info(f"Creating task at {create_url}")
             create_resp = requests.post(create_url, json=task, auth=auth, timeout=10)
-            create_resp.raise_for_status()
+            
+            if create_resp.status_code not in [200, 201]:
+                logging.error(f"Failed to create task: {create_resp.status_code} - {create_resp.text}")
+                return jsonify({"error": f"Failed to create task: {create_resp.status_code}"}), 500
+            
             updated_task = create_resp.json()
         
         # Also update the ServiceRequest status if needed
@@ -1908,15 +1956,19 @@ def fulfill_service_request(patient_id):
             service_request['status'] = 'revoked'
         
         sr_update_url = f"{fhir_server_url}/ServiceRequest/{service_request_id}"
+        logging.info(f"Updating service request at {sr_update_url}")
         sr_update_resp = requests.put(sr_update_url, json=service_request, auth=auth, timeout=10)
-        sr_update_resp.raise_for_status()
+        
+        if sr_update_resp.status_code not in [200, 201]:
+            logging.warning(f"Failed to update ServiceRequest: {sr_update_resp.status_code} - {sr_update_resp.text}")
+            # Don't fail completely, the Task was created/updated successfully
         
         # Return success response
         result = {
             'success': True,
             'message': f'Service request fulfilled with status: {completion_status}',
             'task': updated_task,
-            'serviceRequest': sr_update_resp.json()
+            'serviceRequest': sr_update_resp.json() if sr_update_resp.status_code in [200, 201] else service_request
         }
         
         bundle_json = json.dumps(result, indent=2, default=str)

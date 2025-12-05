@@ -1737,10 +1737,10 @@ def get_service_requests():
         # Try multiple approaches for different FHIR server implementations
         search_url = f"{fhir_server_url}/ServiceRequest"
         
-        # First try with patient parameter and status filter
+        # Use 'authored' for sort parameter (valid SearchParameter for ServiceRequest)
         params = {
             'patient': patient_id,
-            '_sort': '-created'
+            '_sort': '-authored'
         }
         
         logging.info(f"Fetching ServiceRequests for patient: {patient_id} from {search_url}")

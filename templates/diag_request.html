@@ -424,6 +424,83 @@
 </div>
 
 
+<!-- Fulfil Request Modal -->
+<div class="modal fade" id="fulfillRequestModal" tabindex="-1" aria-labelledby="fulfillRequestLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="fulfillRequestForm"
+            hx-post="/fhir/serviceRequest/fulfill/{{ patient.id }}" 
+            hx-trigger="submit"
+            hx-target="#jsonData"
+            hx-swap="outerHTML"
+            hx-indicator="#jsonData-spinner"
+            hx-on="htmx:afterRequest: if (event.detail.successful) { closeDialog(); }">
+        <div class="modal-header">
+          <h5 class="modal-title" id="fulfillRequestLabel">Fulfil Service Request</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Service Request Selection -->
+          <div class="mb-3">
+            <label for="serviceRequestList" class="form-label">Select Service Request to Fulfil</label>
+            <select class="form-select" id="serviceRequestList" name="serviceRequest" required
+                    hx-get="/fhir/serviceRequests"
+                    hx-trigger="shown.bs.modal from:#fulfillRequestModal"
+                    hx-target="#serviceRequestList"
+                    hx-swap="outerHTML"
+                    hx-include="[name='patient_id']">
+              <option value="">Select a service request...</option>
+              <!-- Options will be loaded here by HTMX -->
+            </select>
+          </div>
+          <!-- get patient id from the session -->
+          <input type="hidden" name="patient_id" value="{{ session.current_patient_id }}">
+          
+          <!-- Task Details Section -->
+          <div class="mb-3">
+            <label class="form-label">Task Details</label>
+            <div id="taskDetailsContainer" class="alert alert-light border" style="display: none;">
+              <div class="row">
+                <div class="col-md-6">
+                  <small class="text-muted">Status:</small>
+                  <p id="taskStatus" class="mb-2">-</p>
+                </div>
+                <div class="col-md-6">
+                  <small class="text-muted">Priority:</small>
+                  <p id="taskPriority" class="mb-2">-</p>
+                </div>
+              </div>
+              <small class="text-muted">Description:</small>
+              <p id="taskDescription" class="mb-0">-</p>
+            </div>
+          </div>
+
+          <!-- Completion Status -->
+          <div class="mb-3">
+            <label for="completionStatus" class="form-label">Completion Status</label>
+            <select class="form-select" id="completionStatus" name="completionStatus" required>
+              <option value="">Select status...</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+
+          <!-- Notes -->
+          <div class="mb-3">
+            <label for="fulfillmentNotes" class="form-label">Notes / Comments (Optional)</label>
+            <textarea class="form-control" id="fulfillmentNotes" name="fulfillmentNotes" rows="3" placeholder="Add any notes about the completion..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" onclick="setTimeout(closeDialog, 100)">Fulfil Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
 window.selectedTests = Array.isArray(window.selectedTests) ? window.selectedTests : [];
 
@@ -1438,7 +1515,40 @@ document.getElementById('createDiagnosticRequestModal').addEventListener('shown.
     if (collectionDateTimeInput) {
         collectionDateTimeInput.value = localDateTime;
     }
+    
+    // Handle Service Request selection in Fulfil Request modal
+    const serviceRequestSelect = document.getElementById('serviceRequestList');
+    if (serviceRequestSelect) {
+        serviceRequestSelect.addEventListener('change', function() {
+            updateTaskDetails();
+        });
+    }
 });
+
+// Function to update task details when a service request is selected
+function updateTaskDetails() {
+    const serviceRequestSelect = document.getElementById('serviceRequestList');
+    const selectedOption = serviceRequestSelect.options[serviceRequestSelect.selectedIndex];
+    
+    if (!selectedOption || !selectedOption.value) {
+        // Hide task details if no selection
+        document.getElementById('taskDetailsContainer').style.display = 'none';
+        return;
+    }
+    
+    // Get data attributes from the selected option
+    const status = selectedOption.getAttribute('data-status') || '-';
+    const priority = selectedOption.getAttribute('data-priority') || '-';
+    const description = selectedOption.getAttribute('data-description') || '-';
+    
+    // Update the display elements
+    document.getElementById('taskStatus').textContent = status;
+    document.getElementById('taskPriority').textContent = priority;
+    document.getElementById('taskDescription').textContent = description;
+    
+    // Show the task details container
+    document.getElementById('taskDetailsContainer').style.display = 'block';
+}
 
 function closeDialog() {
     let modalEl = document.getElementById('createDiagnosticRequestModal');

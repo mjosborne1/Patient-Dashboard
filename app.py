@@ -1715,6 +1715,221 @@ def get_stats():
     
     return render_template('stats.html', **stats_data)
 
+
+@app.route('/fhir/serviceRequests', methods=['GET'])
+def get_service_requests():
+    """
+    Get all open ServiceRequests for a patient.
+    Query params:
+      - patient_id: The patient ID (passed via form)
+    """
+    patient_id = request.args.get('patient_id') or session.get('current_patient_id')
+    
+    if not patient_id:
+        logging.error("No patient ID provided")
+        return jsonify({"error": "No patient ID provided"}), 400
+    
+    try:
+        fhir_server_url = get_fhir_server_url()
+        auth = get_fhir_auth_credentials()
+        
+        # Search for ServiceRequests with status 'active' or 'on-hold' for this patient
+        search_url = f"{fhir_server_url}/ServiceRequest"
+        params = {
+            'patient': patient_id,
+            'status': 'active,on-hold',
+            '_sort': '-created'
+        }
+        
+        resp = requests.get(search_url, params=params, auth=auth, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        service_requests = data.get('entry', [])
+        
+        # Build options HTML for the select dropdown
+        options_html = '<option value="">Select a service request...</option>'
+        
+        for entry in service_requests:
+            resource = entry.get('resource', {})
+            sr_id = resource.get('id', '')
+            
+            # Get the code display
+            code_display = ''
+            if 'code' in resource:
+                code_data = resource['code']
+                if 'coding' in code_data and code_data['coding']:
+                    code_display = code_data['coding'][0].get('display', code_data.get('text', 'Unnamed Request'))
+                else:
+                    code_display = code_data.get('text', 'Unnamed Request')
+            
+            # Get status and priority
+            status = resource.get('status', 'unknown')
+            priority = resource.get('priority', 'routine')
+            
+            # Build a descriptive label
+            label = f"{code_display} ({status})"
+            if priority != 'routine':
+                label = f"[{priority.upper()}] {label}"
+            
+            options_html += f'<option value="{sr_id}" data-status="{status}" data-priority="{priority}" data-description="{code_display}">{label}</option>'
+        
+        # Return as select element
+        return render_template('partials/select_options.html', 
+                             select_id='serviceRequestList',
+                             options_html=options_html), 200
+        
+    except requests.exceptions.RequestException as e:
+        logging.error(f"FHIR API error: {e}")
+        return jsonify({"error": "Failed to fetch service requests"}), 500
+
+
+@app.route('/fhir/serviceRequest/fulfill/<patient_id>', methods=['POST'])
+def fulfill_service_request(patient_id):
+    """
+    Fulfill a ServiceRequest by creating/updating associated Tasks.
+    
+    Form data:
+      - serviceRequest: The ServiceRequest ID to fulfill
+      - completionStatus: 'completed', 'failed', or 'cancelled'
+      - fulfillmentNotes: Optional notes about the fulfillment
+    """
+    try:
+        form_data = get_form_data(request)
+        service_request_id = form_data.get('serviceRequest')
+        completion_status = form_data.get('completionStatus', 'completed')
+        notes = form_data.get('fulfillmentNotes', '')
+        
+        if not service_request_id:
+            return jsonify({"error": "Service request ID is required"}), 400
+        
+        fhir_server_url = get_fhir_server_url()
+        auth = get_fhir_auth_credentials()
+        
+        # Get the ServiceRequest to understand what needs to be fulfilled
+        sr_url = f"{fhir_server_url}/ServiceRequest/{service_request_id}"
+        sr_resp = requests.get(sr_url, auth=auth, timeout=10)
+        sr_resp.raise_for_status()
+        service_request = sr_resp.json()
+        
+        # Map completion status to Task status
+        task_status_map = {
+            'completed': 'completed',
+            'failed': 'failed',
+            'cancelled': 'cancelled'
+        }
+        task_status = task_status_map.get(completion_status, 'completed')
+        
+        # Find or create a Task for this ServiceRequest
+        # First, search for existing Task related to this ServiceRequest
+        tasks_url = f"{fhir_server_url}/Task"
+        task_params = {
+            'focus': f"ServiceRequest/{service_request_id}",
+            'status': 'requested,accepted,in-progress'
+        }
+        
+        tasks_resp = requests.get(tasks_url, params=task_params, auth=auth, timeout=10)
+        tasks_resp.raise_for_status()
+        tasks_data = tasks_resp.json()
+        existing_tasks = tasks_data.get('entry', [])
+        
+        # Create a new Task or update existing one
+        if existing_tasks:
+            # Update the first existing task
+            task = existing_tasks[0]['resource']
+            task_id = task['id']
+            task['status'] = task_status
+            
+            if notes:
+                # Add notes to the task output
+                if 'output' not in task:
+                    task['output'] = []
+                task['output'].append({
+                    'type': {
+                        'coding': [{
+                            'system': 'http://terminology.hl7.org/CodeSystem/task-output-type',
+                            'code': 'summary',
+                            'display': 'Summary'
+                        }]
+                    },
+                    'valueString': notes
+                })
+            
+            # Update the task
+            update_url = f"{fhir_server_url}/Task/{task_id}"
+            update_resp = requests.put(update_url, json=task, auth=auth, timeout=10)
+            update_resp.raise_for_status()
+            updated_task = update_resp.json()
+        else:
+            # Create a new Task
+            task = {
+                'resourceType': 'Task',
+                'status': task_status,
+                'intent': 'order',
+                'priority': service_request.get('priority', 'routine'),
+                'focus': {
+                    'reference': f"ServiceRequest/{service_request_id}"
+                },
+                'for': {
+                    'reference': f"Patient/{patient_id}"
+                },
+                'authoredOn': datetime.datetime.now().isoformat(),
+                'lastModified': datetime.datetime.now().isoformat(),
+                'requester': service_request.get('requester'),
+                'owner': service_request.get('performer', [None])[0] if service_request.get('performer') else None
+            }
+            
+            # Add notes if provided
+            if notes:
+                task['description'] = notes
+                task['output'] = [{
+                    'type': {
+                        'coding': [{
+                            'system': 'http://terminology.hl7.org/CodeSystem/task-output-type',
+                            'code': 'summary',
+                            'display': 'Summary'
+                        }]
+                    },
+                    'valueString': notes
+                }]
+            
+            # Create the task
+            create_url = f"{fhir_server_url}/Task"
+            create_resp = requests.post(create_url, json=task, auth=auth, timeout=10)
+            create_resp.raise_for_status()
+            updated_task = create_resp.json()
+        
+        # Also update the ServiceRequest status if needed
+        if completion_status == 'completed':
+            service_request['status'] = 'completed'
+        elif completion_status == 'failed':
+            service_request['status'] = 'entered-in-error'
+        elif completion_status == 'cancelled':
+            service_request['status'] = 'revoked'
+        
+        sr_update_url = f"{fhir_server_url}/ServiceRequest/{service_request_id}"
+        sr_update_resp = requests.put(sr_update_url, json=service_request, auth=auth, timeout=10)
+        sr_update_resp.raise_for_status()
+        
+        # Return success response
+        result = {
+            'success': True,
+            'message': f'Service request fulfilled with status: {completion_status}',
+            'task': updated_task,
+            'serviceRequest': sr_update_resp.json()
+        }
+        
+        bundle_json = json.dumps(result, indent=2, default=str)
+        return render_template('partials/json_textarea.html', bundle_json=bundle_json), 200
+        
+    except requests.exceptions.RequestException as e:
+        logging.error(f"FHIR API error when fulfilling request: {e}")
+        return jsonify({"error": f"Failed to fulfill service request: {str(e)}"}), 500
+    except Exception as e:
+        logging.error(f"Error fulfilling service request: {e}")
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
 if __name__ == '__main__' and os.environ.get('TESTING') != 'true':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     port = int(os.environ.get('PORT', 5001))

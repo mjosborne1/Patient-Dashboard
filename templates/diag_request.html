@@ -1,17 +1,6 @@
 <!-- Diagnostic Request Modal -->
-<div class="modal fade" id="createDiagnosticRequestModal" tabindex="-1" aria-labelledby="createDiagnosticRequestLabel" aria-hidd        <!-- Copy To (Recipients) -->
-        <div class="mb-3">
-            <label for="copyTo" class="form-label">Copy Results To</label>
-            <select class="form-select" id="copyToList" name="copyTo" multiple
-                    hx-get="/fhir/CopyToPractitioners"
-                    hx-trigger="shown.bs.modal from:#createDiagnosticRequestModal"
-                    hx-target="#copyToList"
-                    hx-swap="outerHTML">
-              <option value="">Select practitioners to copy results to...</option>
-              <!-- Options will be loaded here by HTMX -->
-            </select>
-            <div class="form-text">Hold Ctrl (or Cmd on Mac) to select multiple practitioners</div>
-        </div><div class="modal-dialog">
+<div class="modal fade" id="createDiagnosticRequestModal" tabindex="-1" aria-labelledby="createDiagnosticRequestLabel" aria-hidden="true">
+  <div class="modal-dialog">
     <div class="modal-content">
       <form id="diagnosticRequestForm"
             hx-post="/fhir/diagnosticrequest/bundler/{{ patient.id }}" 
@@ -38,7 +27,20 @@
             </select>
           </div>
           <!-- get patient id from the session -->
-          <input type="hidden" name="patient_id" value="{{ session.current_patient_id }}">    
+          <input type="hidden" name="patient_id" value="{{ session.current_patient_id }}">
+          <!-- Copy To (Recipients) -->
+          <div class="mb-3">
+            <label for="copyToList" class="form-label">Copy Results To</label>
+            <select class="form-select" id="copyToList" name="copyTo" multiple
+                    hx-get="/fhir/CopyToPractitioners"
+                    hx-trigger="shown.bs.modal from:#createDiagnosticRequestModal"
+                    hx-target="#copyToList"
+                    hx-swap="outerHTML">
+              <option value="">Select practitioners to copy results to...</option>
+              <!-- Options will be loaded here by HTMX -->
+            </select>
+            <div class="form-text">Hold Ctrl (or Cmd on Mac) to select multiple practitioners</div>
+          </div>
           <!-- Diagnostic Request Category Radio Buttons -->
           <div class="mb-3">
             <label class="form-label" id="requestCategoryLabel">Request Category</label>
@@ -425,6 +427,36 @@
 
 
 <!-- Fulfil Request Modal -->
+<style>
+    /* Lift fulfil modal above any transformed parents and the backdrop */
+    #fulfillRequestModal {
+        z-index: 2000 !important;
+    }
+    #fulfillRequestModal .modal-dialog {
+        position: relative;
+        z-index: 2001 !important;
+    }
+    /* Push the backdrop below the fulfil modal */
+    body.modal-open .modal-backdrop.show {
+        z-index: 1950 !important;
+    }
+</style>
+<script>
+    function moveFulfillModalsToBody() {
+        ['fulfillRequestModal', 'createDiagnosticRequestModal'].forEach(function (id) {
+            const el = document.getElementById(id);
+            if (el && el.parentNode !== document.body) {
+                document.body.appendChild(el);
+            }
+        });
+    }
+
+    // Initial run after full page load
+    document.addEventListener('DOMContentLoaded', moveFulfillModalsToBody);
+    // Re-run after HTMX swaps to keep modals out of nested stacking contexts
+    document.body.addEventListener('htmx:afterSwap', moveFulfillModalsToBody);
+    document.body.addEventListener('htmx:afterSettle', moveFulfillModalsToBody);
+</script>
 <div class="modal fade" id="fulfillRequestModal" tabindex="-1" aria-labelledby="fulfillRequestLabel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -443,15 +475,16 @@
           <!-- Service Request Selection -->
           <div class="mb-3">
             <label for="serviceRequestList" class="form-label">Select Service Request to Fulfil</label>
-            <select class="form-select" id="serviceRequestList" name="serviceRequest" required
-                    hx-get="/fhir/serviceRequests"
-                    hx-trigger="shown.bs.modal from:#fulfillRequestModal"
-                    hx-target="#serviceRequestList"
-                    hx-swap="outerHTML"
-                    hx-include="[name='patient_id']">
-              <option value="">Select a service request...</option>
-              <!-- Options will be loaded here by HTMX -->
-            </select>
+                        <select class="form-select" id="serviceRequestList" name="serviceRequest" required=""
+                            hx-get="/fhir/serviceRequests"
+                            hx-trigger="load, shown.bs.modal from:#fulfillRequestModal"
+                            hx-target="#serviceRequestList"
+                            hx-swap="innerHTML"
+                            hx-include="closest form"
+                            hx-vals='{"patient_id": "{{ patient.id }}"}'>
+                            <option value="">Select a service request...</option>
+                            <!-- Options will be loaded here by HTMX -->
+                        </select>
           </div>
           <!-- get patient id from the session -->
           <input type="hidden" name="patient_id" value="{{ session.current_patient_id }}">
@@ -1523,6 +1556,50 @@ document.getElementById('createDiagnosticRequestModal').addEventListener('shown.
             updateTaskDetails();
         });
     }
+    
+    // Prevent both modals from opening simultaneously
+    const fulfillModal = document.getElementById('fulfillRequestModal');
+    const diagnosticModal = document.getElementById('createDiagnosticRequestModal');
+    
+    if (fulfillModal) {
+        fulfillModal.addEventListener('show.bs.modal', function(e) {
+            console.log('Fulfil Request modal is opening');
+            // Close diagnostic modal if it's open
+            if (diagnosticModal) {
+                const diagModalInstance = bootstrap.Modal.getInstance(diagnosticModal);
+                if (diagModalInstance) {
+                    console.log('Closing Diagnostic Request modal');
+                    diagModalInstance.hide();
+                }
+            }
+        });
+    }
+    
+    if (diagnosticModal) {
+        diagnosticModal.addEventListener('show.bs.modal', function(e) {
+            console.log('Diagnostic Request modal is opening');
+            // Close fulfill modal if it's open
+            if (fulfillModal) {
+                const fulfillModalInstance = bootstrap.Modal.getInstance(fulfillModal);
+                if (fulfillModalInstance) {
+                    console.log('Closing Fulfil Request modal');
+                    fulfillModalInstance.hide();
+                }
+            }
+        });
+    }
+});
+
+// Re-attach event listener after HTMX swaps content in the service request dropdown
+document.body.addEventListener('htmx:afterSwap', function(event) {
+    if (event.detail.target.id === 'serviceRequestList') {
+        const serviceRequestSelect = document.getElementById('serviceRequestList');
+        if (serviceRequestSelect) {
+            serviceRequestSelect.addEventListener('change', function() {
+                updateTaskDetails();
+            });
+        }
+    }
 });
 
 // Function to update task details when a service request is selected
@@ -1551,10 +1628,25 @@ function updateTaskDetails() {
 }
 
 function closeDialog() {
+    // Close diagnostic request modal
     let modalEl = document.getElementById('createDiagnosticRequestModal');
-    let modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
-    modalInstance.hide();
-    console.log('modal should be hidden now...')
+    if (modalEl) {
+        let modalInstance = bootstrap.Modal.getInstance(modalEl);
+        if (modalInstance) {
+            modalInstance.hide();
+        }
+    }
+    
+    // Close fulfill request modal
+    let fulfillModalEl = document.getElementById('fulfillRequestModal');
+    if (fulfillModalEl) {
+        let fulfillModalInstance = bootstrap.Modal.getInstance(fulfillModalEl);
+        if (fulfillModalInstance) {
+            fulfillModalInstance.hide();
+        }
+    }
+    
+    console.log('modals should be hidden now...')
 }
 
 // Function to capture SNOMED codes for specimen fields

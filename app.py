@@ -1733,31 +1733,59 @@ def get_service_requests():
         fhir_server_url = get_fhir_server_url()
         auth = get_fhir_auth_credentials()
         
-        # Search for ServiceRequests for this patient
-        # Try multiple approaches for different FHIR server implementations
+        patient_ref = patient_id if patient_id.startswith('Patient/') else f"Patient/{patient_id}"
+
+        # Search for ServiceRequests for this patient (primary path)
         search_url = f"{fhir_server_url}/ServiceRequest"
-        
-        # Use 'authored' for sort parameter (valid SearchParameter for ServiceRequest)
         params = {
-            'patient': patient_id,
+            'patient': patient_ref,
             '_sort': '-authored'
         }
         
-        logging.info(f"Fetching ServiceRequests for patient: {patient_id} from {search_url}")
+        logging.info(f"Fetching ServiceRequests for patient: {patient_ref} from {search_url}")
         resp = requests.get(search_url, params=params, auth=auth, timeout=10)
         
-        if resp.status_code != 200:
+        service_requests = []
+        if resp.status_code == 200:
+            data = resp.json()
+            service_requests = data.get('entry', [])
+            logging.info(f"Found {len(service_requests)} service requests")
+        else:
             logging.warning(f"ServiceRequest query failed with status {resp.status_code}: {resp.text}")
-            # Return empty list instead of error to gracefully handle missing requests
-            options_html = '<option value="">No open service requests</option>'
-            return render_template('partials/select_options.html', 
-                                 select_id='serviceRequestList',
-                                 options_html=options_html), 200
         
-        data = resp.json()
-        service_requests = data.get('entry', [])
-        
-        logging.info(f"Found {len(service_requests)} service requests")
+        # Fallback: derive ServiceRequests from Tasks with included focus if none were returned
+        if not service_requests:
+            task_search_url = f"{fhir_server_url}/Task"
+            task_params = {
+                'patient': patient_ref,
+                '_include': 'Task:focus'
+            }
+            logging.info(f"Fallback: Fetching Tasks with included focus for patient: {patient_ref}")
+            task_resp = requests.get(task_search_url, params=task_params, auth=auth, timeout=10)
+            if task_resp.status_code == 200:
+                task_bundle = task_resp.json()
+                sr_map = {}
+                entries = task_bundle.get('entry', [])
+                for entry in entries:
+                    res = entry.get('resource', {})
+                    if res.get('resourceType') == 'ServiceRequest' and res.get('id'):
+                        sr_map[res['id']] = res
+                    elif res.get('resourceType') == 'Task':
+                        # If the ServiceRequest was not included, derive minimal details from Task focus
+                        focus_ref = res.get('focus', {}).get('reference', '')
+                        if focus_ref.startswith('ServiceRequest/'):
+                            sr_id = focus_ref.split('/')[-1]
+                            if sr_id not in sr_map:
+                                sr_map[sr_id] = {
+                                    'id': sr_id,
+                                    'code': {'text': res.get('description', 'Task focus')},
+                                    'status': res.get('status', 'unknown'),
+                                    'priority': res.get('priority', 'routine')
+                                }
+                service_requests = [{'resource': sr} for sr in sr_map.values()]
+                logging.info(f"Fallback Tasks returned {len(service_requests)} service requests via focus")
+            else:
+                logging.warning(f"Task fallback query failed with status {task_resp.status_code}: {task_resp.text}")
         
         # Build options HTML for the select dropdown
         options_html = '<option value="">Select a service request...</option>'
@@ -1789,24 +1817,16 @@ def get_service_requests():
             
             options_html += f'<option value="{sr_id}" data-status="{status}" data-priority="{priority}" data-description="{code_display}">{label}</option>'
         
-        # Return as select element
-        return render_template('partials/select_options.html', 
-                             select_id='serviceRequestList',
-                             options_html=options_html), 200
+        # Return just the HTML options
+        return options_html, 200
         
     except requests.exceptions.RequestException as e:
         logging.error(f"FHIR API error: {e}")
         # Return empty dropdown on error
-        options_html = '<option value="">Error loading requests</option>'
-        return render_template('partials/select_options.html', 
-                             select_id='serviceRequestList',
-                             options_html=options_html), 200
+        return '<option value="">Error loading requests</option>', 200
     except Exception as e:
         logging.error(f"Unexpected error fetching service requests: {e}")
-        options_html = '<option value="">Error loading requests</option>'
-        return render_template('partials/select_options.html', 
-                             select_id='serviceRequestList',
-                             options_html=options_html), 200
+        return '<option value="">Error loading requests</option>', 200
 
 
 @app.route('/fhir/serviceRequest/fulfill/<patient_id>', methods=['POST'])

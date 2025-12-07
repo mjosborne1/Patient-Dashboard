@@ -116,14 +116,16 @@
                 </button>
                 <button 
                     class="btn btn-outline-success"
+                    type="button"
                     data-bs-toggle="modal"
-                    data-bs-target="#createDiagnosticRequestModal">
+                    data-bs-target="#createDiagnosticRequestModal"
+                    onclick="event.stopPropagation();">
                     Create Diagnostic Request
                 </button>
                 <button 
-                    class="btn btn-outline-info"
-                    data-bs-toggle="modal"
-                    data-bs-target="#fulfillRequestModal">
+                    class="btn btn-outline-warning"
+                    type="button"
+                    onclick="event.stopPropagation(); const modal = new bootstrap.Modal(document.getElementById('fulfillRequestModal')); modal.show();">
                     Fulfil Request
                 </button>
             </div>

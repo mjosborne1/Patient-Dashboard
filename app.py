@@ -68,6 +68,8 @@ def get_fhir_auth_credentials():
         username = os.environ.get('FHIR_USERNAME')
         password = os.environ.get('FHIR_PASSWORD')
     
+    logging.debug(f"Auth check - header username: {request.headers.get('X-FHIR-Username')}, env username: {os.environ.get('FHIR_USERNAME')}")
+    
     if username and password:
         return (username, password)
     return None
@@ -1714,6 +1716,469 @@ def get_stats():
     }
     
     return render_template('stats.html', **stats_data)
+
+
+# ============================================================================
+# Airport Screen - Task Management by Organisation
+# ============================================================================
+
+# Task status state machine
+TASK_STATUS_TRANSITIONS = {
+    'draft': ['requested', 'cancelled'],
+    'requested': ['accepted', 'cancelled'],
+    'accepted': ['in-progress', 'completed', 'failed', 'cancelled'],
+    'in-progress': ['completed', 'failed', 'cancelled'],
+    'completed': [],
+    'failed': [],
+    'cancelled': []
+}
+
+def is_valid_status_transition(current_status, target_status):
+    """Check if a status transition is allowed."""
+    return target_status in TASK_STATUS_TRANSITIONS.get(current_status, [])
+
+
+@app.route('/airport')
+@login_required
+def airport_screen():
+    """Render the airport screen for managing tasks by organisation."""
+    return render_template('airport.html')
+
+
+@app.route('/api/organisations/with-tasks', methods=['GET'])
+@login_required
+def get_organisations_with_tasks():
+    """
+    Get unique organisations that own group tasks.
+    Query Task with _tag=fulfilment-task-group&_include=Task:owner
+    """
+    try:
+        fhir_server_url = get_fhir_server_url()
+        auth = get_fhir_auth_credentials()
+        
+        # Fetch group tasks with owner included
+        task_url = f"{fhir_server_url}/Task"
+        
+        # Use tuple list for parameters to allow proper _include handling
+        params_list = [
+            ('_tag', 'http://terminology.hl7.org.au/CodeSystem/resource-tag|fulfilment-task-group'),
+            ('_include', 'Task:owner'),
+            ('status', 'requested')
+        ]
+        
+        logging.info("Fetching organisations with group tasks")
+        resp = requests.get(task_url, params=params_list, auth=auth, timeout=10)
+        
+        if resp.status_code != 200:
+            logging.warning(f"Failed to fetch group tasks: {resp.status_code}")
+            logging.warning(f"Response: {resp.text[:500]}")
+            return jsonify([]), 200
+        
+        data = resp.json()
+        entries = data.get('entry', [])
+        
+        # Extract unique organisations
+        org_map = {}
+        for entry in entries:
+            resource = entry.get('resource', {})
+            if resource.get('resourceType') == 'Organization':
+                org_id = resource.get('id', '')
+                identifier = resource.get('identifier', [])
+                if identifier:
+                    id_obj = identifier[0]
+                    id_value = id_obj.get('value', '')
+                    id_system = id_obj.get('system', '')
+                    name = resource.get('name', 'Unknown')
+                    if id_value and id_system:
+                        org_map[id_value] = {
+                            'id': org_id,
+                            'identifier': id_value,
+                            'system': id_system,
+                            'name': name
+                        }
+        
+        # Convert to sorted list
+        organisations = sorted(org_map.values(), key=lambda x: x['name'])
+        logging.info(f"Found {len(organisations)} organisations with group tasks")
+        return jsonify(organisations), 200
+        
+    except Exception as e:
+        logging.error(f"Error fetching organisations: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/tasks/debug', methods=['GET'])
+@login_required
+def debug_tasks():
+    """Debug endpoint to inspect task resource structure"""
+    try:
+        org_identifier = request.args.get('org_identifier', '8003624900039402')
+        
+        fhir_server_url = get_fhir_server_url()
+        auth = get_fhir_auth_credentials()
+        
+        task_url = f"{fhir_server_url}/Task"
+        params_list = [
+            ('owner:Organization.identifier', f"http://ns.electronichealth.net.au/id/hi/hpio/1.0|{org_identifier}"),
+            ('status', 'requested'),
+            ('_tag', 'http://terminology.hl7.org.au/CodeSystem/resource-tag|fulfilment-task-group'),
+            ('_include', 'Task:focus'),
+            ('_include', 'Task:patient'),
+            ('_count', '1')
+        ]
+        
+        resp = requests.get(task_url, params=params_list, auth=auth, timeout=10)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            return jsonify(data), 200
+        else:
+            return jsonify({"error": f"Failed: {resp.status_code}", "body": resp.text[:500]}), resp.status_code
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/tasks/by-org', methods=['GET'])
+@login_required
+def get_tasks_by_org():
+    """
+    Get requested tasks for a selected organisation.
+    Query params:
+      - org_identifier: The organisation identifier (e.g., HPIO)
+      - offset: Pagination offset (default 0)
+      - limit: Pagination limit (default 20)
+    """
+    try:
+        org_identifier = request.args.get('org_identifier')
+        offset = int(request.args.get('offset', 0))
+        limit = int(request.args.get('limit', 20))
+        
+        if not org_identifier:
+            return jsonify({"error": "org_identifier required"}), 400
+        
+        fhir_server_url = get_fhir_server_url()
+        auth = get_fhir_auth_credentials()
+        
+        logging.info(f"FHIR Server URL: {fhir_server_url}")
+        logging.info(f"Auth credentials present: {auth is not None}")
+        if auth:
+            logging.info(f"Auth username: {auth[0]}")
+        
+        # Query tasks with owner org identifier and status=requested
+        # Start with minimal params matching your working Postman query
+        task_url = f"{fhir_server_url}/Task"
+        params_list = [
+            ('owner:Organization.identifier', f"http://ns.electronichealth.net.au/id/hi/hpio/1.0|{org_identifier}"),
+            ('status', 'requested'),
+            ('_tag', 'http://terminology.hl7.org.au/CodeSystem/resource-tag|fulfilment-task-group')
+        ]
+        
+        # Try initial request without includes to test if that's the problem
+        logging.info(f"Fetching tasks for org {org_identifier}, offset={offset}, limit={limit}")
+        logging.info(f"Initial query params (no includes): {params_list}")
+        resp = requests.get(task_url, params=params_list, auth=auth, timeout=10)
+        
+        logging.info(f"FHIR API URL called: {resp.url}")
+        logging.info(f"Response status: {resp.status_code}")
+        
+        if resp.status_code != 200:
+            logging.warning(f"Failed to fetch tasks: {resp.status_code}")
+            logging.warning(f"Response body: {resp.text[:1000]}")
+            return jsonify({"error": f"Failed to fetch tasks: {resp.status_code}", "details": resp.text[:300]}), resp.status_code
+        
+        # If successful, try with includes in a second request
+        params_with_includes = params_list + [
+            ('_include', 'Task:focus'),
+            ('_include', 'Task:patient')
+        ]
+        
+        if limit:
+            params_with_includes.append(('_count', str(limit)))
+        if offset > 0:
+            params_with_includes.append(('_offset', str(offset)))
+        
+        logging.info(f"Now retrying with includes: {params_with_includes}")
+        resp = requests.get(task_url, params=params_with_includes, auth=auth, timeout=10)
+        
+        logging.info(f"With includes - FHIR API URL: {resp.url}")
+        
+        if resp.status_code != 200:
+            logging.warning(f"Request with includes failed: {resp.status_code}, trying without includes")
+            # Fall back to response without includes from first call
+            resp = requests.get(task_url, params=params_list, auth=auth, timeout=10)
+        
+
+        data = resp.json()
+        entries = data.get('entry', [])
+        total_count = data.get('total', 0)
+        
+        # Build task list with patient and serviceRequest details
+        tasks = []
+        sr_map = {}
+        patient_map = {}
+        group_task_map = {}
+        
+        # First pass: extract ServiceRequests and Patients
+        for entry in entries:
+            resource = entry.get('resource', {})
+            res_type = resource.get('resourceType')
+            res_id = resource.get('id', '')
+            
+            if res_type == 'ServiceRequest':
+                sr_map[res_id] = resource
+            elif res_type == 'Patient':
+                patient_map[res_id] = resource
+        
+        # Second pass: process tasks
+        for entry in entries:
+            resource = entry.get('resource', {})
+            if resource.get('resourceType') != 'Task':
+                continue
+            
+            task_id = resource.get('id', '')
+            task_status = resource.get('status', 'unknown')
+            task_priority = resource.get('priority', 'routine')
+            task_description = resource.get('description', 'No description')
+            
+            # Log the full task resource for first task only (for debugging)
+            if task_id and not hasattr(get_tasks_by_org, '_logged_task'):
+                logging.info(f"SAMPLE TASK RESOURCE:\n{json.dumps(resource, indent=2)[:3000]}")
+                get_tasks_by_org._logged_task = True
+            
+            # Extract Placer Group Number (Requisition number)
+            # Check groupIdentifier first, then identifier array
+            placer_group_number = ''
+            
+            # Try groupIdentifier
+            group_identifier = resource.get('groupIdentifier', {})
+            if group_identifier:
+                placer_group_number = group_identifier.get('value', '')
+            
+            # If not found in groupIdentifier, check identifier array for placer group
+            if not placer_group_number:
+                for identifier in resource.get('identifier', []):
+                    system = identifier.get('system', '')
+                    value = identifier.get('value', '')
+                    logging.debug(f"Task {task_id} identifier: system={system}, value={value}")
+                    # Look for placer group or requisition identifiers
+                    if 'placer' in system.lower() or 'requisition' in system.lower():
+                        placer_group_number = value
+                        break
+            
+            logging.info(f"Task {task_id}: placer_group_number={placer_group_number}")
+            
+            # Extract patient reference
+            for_ref = resource.get('for', {}).get('reference', '')
+            patient_id = for_ref.split('/')[-1] if 'Patient/' in for_ref else ''
+            
+            # Extract focus (ServiceRequest) reference
+            focus_ref = resource.get('focus', {}).get('reference', '')
+            sr_id = focus_ref.split('/')[-1] if 'ServiceRequest/' in focus_ref else ''
+            
+            # Check if this is a group task
+            is_group = False
+            for tag in resource.get('meta', {}).get('tag', []):
+                if 'fulfilment-task-group' in tag.get('code', ''):
+                    is_group = True
+                    break
+            
+            # Get ServiceRequest details
+            service_request = sr_map.get(sr_id)
+            sr_code = ''
+            sr_description = ''
+            if service_request:
+                code_obj = service_request.get('code', {})
+                sr_code = code_obj.get('text', '')
+                if not sr_code and code_obj.get('coding'):
+                    sr_code = code_obj['coding'][0].get('display', '')
+                sr_description = service_request.get('intent', '')
+                
+                # Extract placer group number from ServiceRequest.requisition if not found in Task
+                if not placer_group_number:
+                    requisition = service_request.get('requisition', {})
+                    if requisition:
+                        placer_group_number = requisition.get('value', '')
+                        logging.info(f"Task {task_id}: Found placer_group_number in SR.requisition: {placer_group_number}")
+                    else:
+                        logging.debug(f"Task {task_id}: No requisition in SR, checking for identifier array")
+                        # Check ServiceRequest identifiers
+                        for identifier in service_request.get('identifier', []):
+                            system = identifier.get('system', '')
+                            value = identifier.get('value', '')
+                            logging.debug(f"Task {task_id} SR identifier: system={system}, value={value}")
+                            if 'placer' in system.lower() or 'requisition' in system.lower():
+                                placer_group_number = value
+                                logging.info(f"Task {task_id}: Found placer_group_number in SR.identifier: {placer_group_number}")
+                                break
+            
+            # Get patient details
+            patient = patient_map.get(patient_id)
+            patient_name = 'Unknown'
+            patient_dob = ''
+            patient_identifiers = {}  # Will contain ihi, medicare, dva
+            
+            if patient:
+                # Extract name
+                name_array = patient.get('name', [])
+                if name_array:
+                    name_obj = name_array[0]
+                    family = name_obj.get('family', '')
+                    given = name_obj.get('given', [])
+                    given_str = ' '.join(given) if given else ''
+                    patient_name = f"{given_str} {family}".strip()
+                
+                # Extract DOB
+                patient_dob = patient.get('birthDate', '')
+                
+                # Extract identifiers
+                for identifier in patient.get('identifier', []):
+                    system = identifier.get('system', '')
+                    value = identifier.get('value', '')
+                    
+                    if 'hi/ihi' in system:
+                        patient_identifiers['ihi'] = value
+                    elif 'hi/medicareNumber' in system:
+                        patient_identifiers['medicare'] = value
+                    elif 'hi/dva' in system:
+                        patient_identifiers['dva'] = value
+            task_item = {
+                'id': task_id,
+                'patient_id': patient_id,
+                'patient_name': patient_name,
+                'patient_dob': patient_dob,
+                'patient_identifiers': patient_identifiers,
+                'status': task_status,
+                'priority': task_priority,
+                'description': task_description or sr_description,
+                'serviceRequest': {
+                    'id': sr_id,
+                    'code': sr_code,
+                    'description': sr_description,
+                    'placer_group_number': placer_group_number
+                },
+                'isGroupTask': is_group
+            }
+            
+            if is_group:
+                group_task_map[task_id] = task_item
+            else:
+                tasks.append(task_item)
+        
+        logging.info(f"Retrieved {len(tasks)} tasks, {len(group_task_map)} group tasks")
+        
+        return jsonify({
+            'tasks': tasks,
+            'groupTasks': list(group_task_map.values()),
+            'totalCount': total_count,
+            'offset': offset,
+            'limit': limit
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error fetching tasks: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/task-groups/<group_task_id>/status', methods=['POST'])
+@login_required
+def update_task_group_status(group_task_id):
+    """
+    Update status of all child tasks in a group task.
+    Form/JSON params:
+      - newStatus: The target status
+    Validates transition before applying.
+    """
+    try:
+        form_data = get_form_data(request)
+        new_status = form_data.get('newStatus', '')
+        
+        if not new_status:
+            return jsonify({"error": "newStatus is required"}), 400
+        
+        fhir_server_url = get_fhir_server_url()
+        auth = get_fhir_auth_credentials()
+        
+        # Fetch the group task to understand current state and find child tasks
+        group_task_url = f"{fhir_server_url}/Task/{group_task_id}"
+        group_resp = requests.get(group_task_url, auth=auth, timeout=10)
+        
+        if group_resp.status_code != 200:
+            return jsonify({"error": f"Group task not found: {group_resp.status_code}"}), 404
+        
+        group_task = group_resp.json()
+        current_status = group_task.get('status', '')
+        
+        # Validate transition for group task
+        if not is_valid_status_transition(current_status, new_status):
+            return jsonify({
+                "error": "Invalid status transition",
+                "message": f"Cannot transition from '{current_status}' to '{new_status}'",
+                "allowed": TASK_STATUS_TRANSITIONS.get(current_status, [])
+            }), 400
+        
+        # Find related tasks (child tasks with this group task in 'partOf')
+        related_tasks_url = f"{fhir_server_url}/Task"
+        params = {
+            'part-of': f"Task/{group_task_id}"
+        }
+        
+        related_resp = requests.get(related_tasks_url, params=params, auth=auth, timeout=10)
+        related_tasks = []
+        if related_resp.status_code == 200:
+            data = related_resp.json()
+            related_tasks = data.get('entry', [])
+        
+        # Update all related tasks
+        updated_count = 0
+        failed_updates = []
+        
+        for entry in related_tasks:
+            task = entry.get('resource', {})
+            task_id = task.get('id', '')
+            task_status = task.get('status', '')
+            
+            # Validate transition for child task
+            if not is_valid_status_transition(task_status, new_status):
+                failed_updates.append({
+                    'taskId': task_id,
+                    'reason': f"Cannot transition from '{task_status}' to '{new_status}'"
+                })
+                continue
+            
+            # Update the task
+            task['status'] = new_status
+            task_update_url = f"{fhir_server_url}/Task/{task_id}"
+            update_resp = requests.put(task_update_url, json=task, auth=auth, timeout=10)
+            
+            if update_resp.status_code in [200, 201]:
+                updated_count += 1
+                logging.info(f"Updated task {task_id} to status {new_status}")
+            else:
+                failed_updates.append({
+                    'taskId': task_id,
+                    'reason': f"Server returned {update_resp.status_code}"
+                })
+        
+        # Update the group task itself
+        group_task['status'] = new_status
+        group_update_resp = requests.put(group_task_url, json=group_task, auth=auth, timeout=10)
+        
+        if group_update_resp.status_code not in [200, 201]:
+            logging.warning(f"Failed to update group task {group_task_id}: {group_update_resp.status_code}")
+        
+        return jsonify({
+            'success': True,
+            'updatedCount': updated_count,
+            'failedCount': len(failed_updates),
+            'failedUpdates': failed_updates,
+            'newStatus': new_status
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error updating task group status: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__' and os.environ.get('TESTING') != 'true':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'

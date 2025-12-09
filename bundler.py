@@ -653,6 +653,12 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
             'AUPUBHOSP': 'Public Hospital',
             'WCBPOL': 'Workers\' Compensation'
         }
+        v3ActCode = 'http://terminology.hl7.org/CodeSystem/v3-ActCode'
+        bill_type_system_mapping = {
+            'AUPUBHOSP': 'http://terminology.hl7.org.au/CodeSystem/v3-ActCode',
+            'pay': 'http://terminology.hl7.org/CodeSystem/coverage-selfpay',
+            'payconc': 'http://terminology.hl7.org/CodeSystem/coverage-selfpay'
+        }
         
         coverage_id = str(uuid.uuid4())
         coverage_reference = {
@@ -670,7 +676,8 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
             "status": "active",
             "type": {
                 "coding": [{
-                    "code": bill_type
+                    "code": bill_type,
+                    "system": bill_type_system_mapping.get(bill_type,v3ActCode)
                 }],
                 "text": billing_category_mapping.get(bill_type, bill_type)
             },
@@ -879,8 +886,8 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                     "valueCodeableConcept": {
                         "coding": [{
                             "system": "http://snomed.info/sct",
-                            "code": "16985007" if fasting_status == "Fasting" else "276330003",
-                            "display": "Fasting" if fasting_status == "Fasting" else "Non-fasting"
+                            "code": "16985007" if fasting_status == "Fasting" else "440565004",
+                            "display": "Fasting" if fasting_status == "Fasting" else "Nonfasting"
                         }]
                     }
                 }
@@ -987,7 +994,7 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
         # Check if clinical context DocumentReference should be added
         if doc_ref_id:
             supporting_info.append({
-                "reference": f"urn:uuid:{doc_ref_id}",
+                "reference": f"DocumentReference/urn:uuid:{doc_ref_id}",
                 "display": "Clinical Context"
             })
         

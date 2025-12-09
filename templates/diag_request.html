@@ -1,4 +1,10 @@
 <!-- Diagnostic Request Modal -->
+<style>
+.htmx-request {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+</style>
 <div class="modal fade" id="createDiagnosticRequestModal" tabindex="-1" aria-labelledby="createDiagnosticRequestLabel" aria-hidd        <!-- Copy To (Recipients) -->
         <div class="mb-3">
             <label for="copyTo" class="form-label">Copy Results To</label>
@@ -19,7 +25,7 @@
             hx-target="#jsonData"
             hx-swap="outerHTML"
             hx-indicator="#jsonData-spinner"
-            hx-on="htmx:afterRequest: if (event.detail.successful) { closeDialog(); }">
+            hx-on="htmx:afterRequest: closeDialog()">
         <div class="modal-header">
           <h5 class="modal-title" id="createDiagnosticRequestLabel">Diagnostic Request</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -416,7 +422,7 @@
         <!-- Submit Request bundle-->
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary" onclick="setTimeout(closeDialog, 100)">Submit Request</button>
+          <button type="submit" class="btn btn-primary">Submit Request</button>
         </div>
       </form>
     </div>
@@ -1438,13 +1444,26 @@ document.getElementById('createDiagnosticRequestModal').addEventListener('shown.
     if (collectionDateTimeInput) {
         collectionDateTimeInput.value = localDateTime;
     }
+
+    // Force HTMX to process the form
+    const form = document.getElementById('diagnosticRequestForm');
+    if (form && typeof htmx !== 'undefined') {
+        htmx.process(form);
+    }
 });
 
 function closeDialog() {
     let modalEl = document.getElementById('createDiagnosticRequestModal');
     let modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
     modalInstance.hide();
-    console.log('modal should be hidden now...')
+    // Also remove any lingering backdrop and modal-open class
+    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+    document.body.classList.remove('modal-open');
+    // Force hide the modal
+    modalEl.style.display = 'none';
+    modalEl.classList.remove('show');
+    modalEl.setAttribute('aria-hidden', 'true');
+    modalEl.removeAttribute('aria-modal');
 }
 
 // Function to capture SNOMED codes for specimen fields
@@ -1515,4 +1534,24 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// Global HTMX event listener for form submission
+htmx.on('afterRequest', function(evt) {
+    if (evt.target.id === 'diagnosticRequestForm') {
+        closeDialog();
+    }
+});
+
+// Also close the modal after the swap that writes into #jsonData (belt-and-braces)
+document.body.addEventListener('htmx:afterSwap', function(event) {
+    if (event.target && event.target.id === 'jsonData') {
+        closeDialog();
+    }
+}, true);
+
+// Log native form submit in case HTMX is not intercepting
+document.addEventListener('submit', function(event) {
+    if (event.target && event.target.id === 'diagnosticRequestForm') {
+    }
+}, true);
 </script>

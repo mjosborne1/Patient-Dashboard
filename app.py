@@ -650,7 +650,7 @@ def get_immunizations(patient_id):
 def get_requesters():
     """
     Returns a list of PractitionerRoles with name, specialty, and PractitionerRole id for dropdown.
-    Only includes PractitionerRoles with a known value in the specialty element.
+    Only includes PractitionerRoles with specific specialty codes.
     """
     response = fhir_get("/PractitionerRole?_include=PractitionerRole:practitioner&_count=100", fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
     if response.status_code != 200:
@@ -669,28 +669,45 @@ def get_requesters():
             full_name = ' '.join(name.get('given', [])) + ' ' + name.get('family', '')
             practitioners[practitioner_id] = full_name.strip()
 
+    # Allowed specialty codes
+    allowed_specialty_codes = {
+        '394603008',  # Clinical immunology/allergy
+        '394593009',  # Clinical oncology
+        '24251000087109',  # Occupational medicine
+        '394579002',  # Emergency medicine
+        '394589003',  # Nephrology
+        '394584008',  # Gastroenterology
+    }
+
     requesters = []
     for entry in entries:
         resource = entry.get('resource', {})
         if resource.get('resourceType') == 'PractitionerRole':
             role_id = resource.get('id')
-            # Get practitioner name
-            practitioner_ref = resource.get('practitioner', {}).get('reference', '')
-            practitioner_id = practitioner_ref.split('/')[-1] if practitioner_ref else ''
-            name = practitioners.get(practitioner_id, 'Unknown')
-            # Get specialty display (first SNOMED if available)
-            specialty_display = ''
+            
+            # Check if this PractitionerRole has one of the allowed specialty codes
+            has_allowed_specialty = False
             specialty_concepts = resource.get('specialty', [])
+            specialty_display = ''
+            
             if specialty_concepts and isinstance(specialty_concepts, list):
                 for concept in specialty_concepts:
                     for coding in concept.get('coding', []):
-                        if coding.get('system') == "http://snomed.info/sct" and coding.get('display'):
-                            specialty_display = coding['display']
+                        if (coding.get('system') == "http://snomed.info/sct" and 
+                            coding.get('code') in allowed_specialty_codes):
+                            has_allowed_specialty = True
+                            specialty_display = coding.get('display', '')
                             break
-                    if specialty_display:
+                    if has_allowed_specialty:
                         break
-            # Only add requester if specialty_display is valued (not empty)
-            if specialty_display:
+            
+            # Only add requester if specialty matches allowed codes
+            if has_allowed_specialty and specialty_display:
+                # Get practitioner name
+                practitioner_ref = resource.get('practitioner', {}).get('reference', '')
+                practitioner_id = practitioner_ref.split('/')[-1] if practitioner_ref else ''
+                name = practitioners.get(practitioner_id, 'Unknown')
+                
                 requester = {
                     "id": role_id,
                     "name": name,

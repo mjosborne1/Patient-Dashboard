@@ -565,6 +565,11 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                     "system": "http://snomed.info/sct",
                     "code": "77386006",
                     "display": "Pregnancy"
+                },
+                {
+                    "system": "http://loinc.org",
+                    "code": "82810-3",
+                    "display": "Pregnancy status"
                 }]
             },
             "subject": patient_reference,
@@ -987,7 +992,7 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
         # Check if pregnancy status should be added
         if pregnancy_obs_id:
             supporting_info.append({
-                "reference": f"urn:uuid:{pregnancy_obs_id}",
+                "reference": f"Observation/urn:uuid:{pregnancy_obs_id}",
                 "display": "Pregnancy status"
             })
         

@@ -1907,7 +1907,8 @@ def get_tasks_by_org():
         # If successful, try with includes in a second request
         params_with_includes = params_list + [
             ('_include', 'Task:focus'),
-            ('_include', 'Task:patient')
+            ('_include', 'Task:patient'),
+            ('_revinclude', 'Task:part-of')  # Include child tasks that reference these group tasks
         ]
         
         if limit:
@@ -1935,6 +1936,7 @@ def get_tasks_by_org():
         sr_map = {}
         patient_map = {}
         group_task_map = {}
+        child_task_map = {}  # Map of group task ID to list of child tasks
         
         # First pass: extract ServiceRequests and Patients
         for entry in entries:
@@ -1947,7 +1949,25 @@ def get_tasks_by_org():
             elif res_type == 'Patient':
                 patient_map[res_id] = resource
         
-        # Second pass: process tasks
+        # Second pass: process tasks and identify child relationships
+        for entry in entries:
+            resource = entry.get('resource', {})
+            if resource.get('resourceType') != 'Task':
+                continue
+            
+            # Check if this task has a partOf reference (it's a child task)
+            part_of_ref = resource.get('partOf', [])
+            if part_of_ref and len(part_of_ref) > 0:
+                parent_ref = part_of_ref[0].get('reference', '')
+                parent_task_id = parent_ref.split('/')[-1] if 'Task/' in parent_ref else ''
+                if parent_task_id:
+                    if parent_task_id not in child_task_map:
+                        child_task_map[parent_task_id] = []
+                    child_task_map[parent_task_id].append(resource)
+        
+        logging.info(f"Found {len(child_task_map)} group tasks with children")
+        
+        # Third pass: process tasks with full context
         for entry in entries:
             resource = entry.get('resource', {})
             if resource.get('resourceType') != 'Task':
@@ -2000,34 +2020,132 @@ def get_tasks_by_org():
                     is_group = True
                     break
             
+            # For group tasks, collect ServiceRequest codes from child tasks
+            if is_group and task_id in child_task_map:
+                logging.info(f"Task {task_id}: Group task with {len(child_task_map[task_id])} children")
+                # Get all unique ServiceRequest IDs from child tasks
+                child_sr_ids = set()
+                for child_task in child_task_map[task_id]:
+                    child_focus_ref = child_task.get('focus', {}).get('reference', '')
+                    child_sr_id = child_focus_ref.split('/')[-1] if 'ServiceRequest/' in child_focus_ref else ''
+                    if child_sr_id:
+                        child_sr_ids.add(child_sr_id)
+                
+                logging.info(f"Task {task_id}: Found {len(child_sr_ids)} unique ServiceRequest IDs from children: {child_sr_ids}")
+                sr_id = ','.join(child_sr_ids) if child_sr_ids else ''
+            
             # Get ServiceRequest details
             service_request = sr_map.get(sr_id)
             sr_code = ''
             sr_description = ''
-            if service_request:
+            sr_code_displays = []
+            
+            logging.info(f"Task {task_id}: sr_id={sr_id}, found in sr_map={service_request is not None}")
+            
+            # For group tasks with multiple SRs, collect all code displays (coding.display only)
+            if is_group and ',' in str(sr_id):
+                sr_ids = sr_id.split(',')
+                logging.info(f"Task {task_id}: Processing {len(sr_ids)} ServiceRequests for code displays")
+                for single_sr_id in sr_ids:
+                    single_sr = sr_map.get(single_sr_id)
+                    if single_sr:
+                        code_obj = single_sr.get('code', {})
+                        if code_obj.get('coding'):
+                            for coding in code_obj.get('coding', []):
+                                display = coding.get('display')
+                                if display and display not in sr_code_displays:
+                                    sr_code_displays.append(display)
+                                    logging.info(f"Task {task_id}: Added code display from SR {single_sr_id}: {display}")
+                        else:
+                            logging.debug(f"Task {task_id}: SR {single_sr_id} has no coding array, skipping text fallback")
+                    else:
+                        # Try fetching individual SR
+                        logging.warning(f"Task {task_id}: ServiceRequest {single_sr_id} not in bundle, attempting direct fetch")
+                        try:
+                            sr_resp = requests.get(f"{fhir_server_url}/ServiceRequest/{single_sr_id}", auth=auth, timeout=8)
+                            if sr_resp.status_code == 200:
+                                single_sr = sr_resp.json()
+                                code_obj = single_sr.get('code', {})
+                                if code_obj.get('coding'):
+                                    for coding in code_obj.get('coding', []):
+                                        display = coding.get('display')
+                                        if display and display not in sr_code_displays:
+                                            sr_code_displays.append(display)
+                                            logging.info(f"Task {task_id}: Fetched SR {single_sr_id} code display: {display}")
+                        except Exception as e:
+                            logging.warning(f"Failed to fetch ServiceRequest {single_sr_id}: {e}")
+                # For group tasks, use first code display as summary (not text field)
+                service_request = sr_map.get(sr_ids[0]) if sr_ids else None
+                if service_request:
+                    code_obj = service_request.get('code', {})
+                    # Use coding.display for sr_code, NOT text
+                    sr_code = ''
+                    if code_obj.get('coding'):
+                        sr_code = code_obj['coding'][0].get('display', '')
+                    sr_description = service_request.get('intent', '')
+            elif service_request:
                 code_obj = service_request.get('code', {})
                 sr_code = code_obj.get('text', '')
                 if not sr_code and code_obj.get('coding'):
                     sr_code = code_obj['coding'][0].get('display', '')
+
+                # Collect all code displays for detail view
+                if code_obj.get('coding'):
+                    logging.info(f"Task {task_id}: Found {len(code_obj.get('coding', []))} codings in ServiceRequest")
+                    for coding in code_obj.get('coding', []):
+                        display = coding.get('display') or coding.get('code') or ''
+                        if display:
+                            sr_code_displays.append(display)
+                            logging.info(f"Task {task_id}: Added code display: {display}")
+                elif sr_code:
+                    sr_code_displays.append(sr_code)
+                    logging.info(f"Task {task_id}: Added sr_code text: {sr_code}")
+                else:
+                    logging.warning(f"Task {task_id}: ServiceRequest has no codings or text")
                 sr_description = service_request.get('intent', '')
-                
-                # Extract placer group number from ServiceRequest.requisition if not found in Task
-                if not placer_group_number:
-                    requisition = service_request.get('requisition', {})
-                    if requisition:
-                        placer_group_number = requisition.get('value', '')
-                        logging.info(f"Task {task_id}: Found placer_group_number in SR.requisition: {placer_group_number}")
-                    else:
-                        logging.debug(f"Task {task_id}: No requisition in SR, checking for identifier array")
-                        # Check ServiceRequest identifiers
-                        for identifier in service_request.get('identifier', []):
-                            system = identifier.get('system', '')
-                            value = identifier.get('value', '')
-                            logging.debug(f"Task {task_id} SR identifier: system={system}, value={value}")
-                            if 'placer' in system.lower() or 'requisition' in system.lower():
-                                placer_group_number = value
-                                logging.info(f"Task {task_id}: Found placer_group_number in SR.identifier: {placer_group_number}")
-                                break
+            else:
+                # If not included, try fetching the ServiceRequest directly (best-effort)
+                logging.warning(f"Task {task_id}: ServiceRequest {sr_id} not in bundle, attempting direct fetch")
+                if sr_id:
+                    try:
+                        sr_resp = requests.get(f"{fhir_server_url}/ServiceRequest/{sr_id}", auth=auth, timeout=8)
+                        logging.info(f"Task {task_id}: Direct SR fetch status={sr_resp.status_code}")
+                        if sr_resp.status_code == 200:
+                            service_request = sr_resp.json()
+                            code_obj = service_request.get('code', {})
+                            sr_code = code_obj.get('text', '')
+                            if not sr_code and code_obj.get('coding'):
+                                sr_code = code_obj['coding'][0].get('display', '')
+                            if code_obj.get('coding'):
+                                logging.info(f"Task {task_id}: Fetched SR has {len(code_obj.get('coding', []))} codings")
+                                for coding in code_obj.get('coding', []):
+                                    display = coding.get('display') or coding.get('code') or ''
+                                    if display:
+                                        sr_code_displays.append(display)
+                                        logging.info(f"Task {task_id}: Fetched SR code display: {display}")
+                            elif sr_code:
+                                sr_code_displays.append(sr_code)
+                                logging.info(f"Task {task_id}: Fetched SR code text: {sr_code}")
+                            sr_description = service_request.get('intent', '')
+                    except Exception as e:
+                        logging.warning(f"Failed to fetch ServiceRequest {sr_id}: {e}")
+            # Extract placer group number from ServiceRequest.requisition if not found in Task
+            if service_request and not placer_group_number:
+                requisition = service_request.get('requisition', {})
+                if requisition:
+                    placer_group_number = requisition.get('value', '')
+                    logging.info(f"Task {task_id}: Found placer_group_number in SR.requisition: {placer_group_number}")
+                else:
+                    logging.debug(f"Task {task_id}: No requisition in SR, checking for identifier array")
+                    # Check ServiceRequest identifiers
+                    for identifier in service_request.get('identifier', []):
+                        system = identifier.get('system', '')
+                        value = identifier.get('value', '')
+                        logging.debug(f"Task {task_id} SR identifier: system={system}, value={value}")
+                        if 'placer' in system.lower() or 'requisition' in system.lower():
+                            placer_group_number = value
+                            logging.info(f"Task {task_id}: Found placer_group_number in SR.identifier: {placer_group_number}")
+                            break
             
             # Get patient details
             patient = patient_map.get(patient_id)
@@ -2071,11 +2189,42 @@ def get_tasks_by_org():
                 'serviceRequest': {
                     'id': sr_id,
                     'code': sr_code,
+                    'codes': sr_code_displays,
                     'description': sr_description,
                     'placer_group_number': placer_group_number
                 },
                 'isGroupTask': is_group
             }
+            
+            # For group tasks, add child task details
+            if is_group and task_id in child_task_map:
+                child_details = []
+                for child_task in child_task_map[task_id]:
+                    child_task_id = child_task.get('id', '')
+                    child_focus_ref = child_task.get('focus', {}).get('reference', '')
+                    child_sr_id = child_focus_ref.split('/')[-1] if 'ServiceRequest/' in child_focus_ref else ''
+                    
+                    # Get the ServiceRequest for this child task
+                    child_sr = sr_map.get(child_sr_id)
+                    child_code_display = ''
+                    if child_sr:
+                        code_obj = child_sr.get('code', {})
+                        if code_obj.get('coding'):
+                            child_code_display = code_obj['coding'][0].get('display', '') or code_obj['coding'][0].get('code', '')
+                        elif code_obj.get('text'):
+                            child_code_display = code_obj.get('text', '')
+                    
+                    child_details.append({
+                        'id': child_task_id,
+                        'serviceRequestId': child_sr_id,
+                        'codeDisplay': child_code_display,
+                        'status': child_task.get('status', 'unknown')
+                    })
+                
+                task_item['childTasks'] = child_details
+                logging.info(f"Task {task_id}: Added {len(child_details)} child task details")
+            
+            logging.info(f"Task {task_id}: Created task_item with {len(sr_code_displays)} code displays: {sr_code_displays}")
             
             if is_group:
                 group_task_map[task_id] = task_item

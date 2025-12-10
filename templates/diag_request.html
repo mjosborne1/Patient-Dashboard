@@ -78,7 +78,7 @@
                     placeholder="start typing the test name..." 
                     autocomplete="off"                
                     hx-get="/fhir/diagvalueset/expand"
-                    hx-trigger="input changed delay:500ms, keyup[!event.shiftKey && event.key=='Tab'] from:#testName, change from:input[name='requestCategory']"
+                    hx-trigger="input changed delay:100ms, keyup[!event.shiftKey && event.key=='Tab'] from:#testName, change from:input[name='requestCategory']"
                     hx-target="#testNameDropdown"
                     hx-include="closest form"
                     hx-swap="innerHTML"
@@ -103,7 +103,7 @@
             </div>
             
             <!-- Hidden field to store selected tests as tags -->
-            <input type="hidden" id="selectedTests" name="selectedTests">
+            <input type="hidden" id="selectedTests" name="selectedTests">   
             <div id="selectedTestsDisplay" class="mt-2"></div>
             
             <!-- Specimen Collection Checkbox (shown only for Pathology) -->
@@ -446,13 +446,17 @@ function renderSelectedTests() {
             <div class="mb-2">
                 <small class="text-muted"><strong>Selected Tests (${window.selectedTests.length}):</strong></small>
             </div>
-            ${window.selectedTests.map((test, idx) =>
-                `<span class="badge bg-primary me-1 mb-1 d-inline-flex align-items-center" style="font-size: 0.9em;">
+            ${window.selectedTests.map((test, idx) => {
+                const testDisplay = typeof test === 'string' ? test : test.display;
+                const testCode = typeof test === 'string' ? '' : test.code;
+                const codeDisplay = testCode ? ` <small class="text-white-50">(${testCode})</small>` : '';
+                const ariaLabel = testCode ? `${testDisplay} (${testCode})` : testDisplay;
+                return `<span class="badge bg-primary me-1 mb-1 d-inline-flex align-items-center" style="font-size: 0.9em;">
                     <span class="me-1">${idx + 1}.</span>
-                    ${typeof test === 'string' ? test : test.display}
-                    <button type="button" class="btn-close btn-close-white btn-sm ms-2" aria-label="Remove ${typeof test === 'string' ? test : test.display}" onclick="removeTest(${idx})" style="font-size:0.6em;" title="Remove test"></button>
-                </span>`
-            ).join('')}
+                    <span>${testDisplay}${codeDisplay}</span>
+                    <button type="button" class="btn-close btn-close-white btn-sm ms-2" aria-label="Remove ${ariaLabel}" onclick="removeTest(${idx})" style="font-size:0.6em;" title="Remove test"></button>
+                </span>`;
+            }).join('')}
         `;
     }
     
@@ -498,25 +502,66 @@ function addTestSelection() {
         );
         
         if (!existingTest) {
-            // Try to find the corresponding option in the dropdown to get the code
-            const dropdown = document.getElementById('testNameDropdown');
+            // Try to find from cached search results with smart matching
             let testCode = '';
+            let officialDisplay = value; // Default to user input
             
-            if (dropdown) {
-                const options = dropdown.querySelectorAll('.test-option');
-                for (let option of options) {
-                    if (option.getAttribute('data-display') === value) {
-                        testCode = option.getAttribute('data-code') || '';
-                        break;
+            // Debug: Log cache state
+            console.log(`[addTestSelection] Cache contains ${window.lastTestSearchResults ? window.lastTestSearchResults.length : 0} items:`, window.lastTestSearchResults);
+            console.log(`[addTestSelection] Looking for match for user input: "${value}"`);
+            
+            // Strategy 1: Exact match on display
+            let matchedTest = window.lastTestSearchResults.find(t => t.display === value);
+            
+            // Strategy 2: Case-insensitive exact match
+            if (!matchedTest) {
+                matchedTest = window.lastTestSearchResults.find(t => 
+                    t.display && t.display.toLowerCase() === value.toLowerCase()
+                );
+            }
+            
+            // Strategy 3: Substring match - find a test that contains the user's input
+            if (!matchedTest) {
+                matchedTest = window.lastTestSearchResults.find(t => 
+                    t.display && t.display.toLowerCase().includes(value.toLowerCase())
+                );
+            }
+            
+            // Strategy 4: User's input is contained in a test name
+            if (!matchedTest) {
+                matchedTest = window.lastTestSearchResults.find(t => 
+                    t.display && value.toLowerCase().includes(t.display.toLowerCase().split(/[\s()]/)[0])
+                );
+            }
+            
+            if (matchedTest) {
+                testCode = matchedTest.code || '';
+                officialDisplay = matchedTest.display || value; // Use official display from API
+                console.log(`[addTestSelection] Found matching test: "${matchedTest.display}" (code: "${testCode}")`);
+            } else {
+                // Fallback: Try to find the corresponding option in the dropdown
+                const dropdown = document.getElementById('testNameDropdown');
+                if (dropdown) {
+                    const options = dropdown.querySelectorAll('.test-option');
+                    for (let option of options) {
+                        const optDisplay = option.getAttribute('data-display');
+                        if (optDisplay && optDisplay.toLowerCase() === value.toLowerCase()) {
+                            testCode = option.getAttribute('data-code') || '';
+                            officialDisplay = optDisplay; // Use official display from dropdown
+                            console.log(`[addTestSelection] Found test in dropdown: "${optDisplay}" (code: "${testCode}")`);
+                            break;
+                        }
                     }
                 }
             }
             
-            // Store as object with code, display, and display_sequence
-            // The sequence is 1-indexed based on the order of addition
+            // Debug log before storing
+            console.log(`[addTestSelection] Adding test - user input: "${value}", official display: "${officialDisplay}", code: "${testCode}"`);
+            
+            // Store as object with code, official display, and display_sequence
             window.selectedTests.push({
                 code: testCode,
-                display: value,
+                display: officialDisplay,
                 display_sequence: window.selectedTests.length + 1
             });
             renderSelectedTests();
@@ -572,28 +617,71 @@ function removeTest(idx) {
     }
 }
 
+// Store last search results for reference
+window.lastTestSearchResults = [];
+
 // Add test on Enter, Tab, or when a dropdown option is picked
 document.getElementById('testName').addEventListener('change', addTestSelection);
 document.getElementById('testName').addEventListener('keydown', function(e) {
     const dropdown = document.getElementById('testNameDropdown');
-    const options = dropdown.querySelectorAll('.test-option');
+    const testInput = document.getElementById('testName');
     
     if (e.key === 'Enter') {
         e.preventDefault();
-        // If there are visible options and no specific one is highlighted, select the first one
+        const options = dropdown.querySelectorAll('.test-option');
+        
+        // Only use visible dropdown options if we triggered a search for the current input
+        // Otherwise, always trigger a fresh search to get latest results
         if (options.length > 0) {
             const highlighted = dropdown.querySelector('.test-option.highlighted');
             if (highlighted) {
-                highlighted.click();
-            } else {
-                // Select first option
-                options[0].click();
+                // Get data from highlighted option and call addSpecificTestSelection directly
+                const code = highlighted.getAttribute('data-code');
+                const display = highlighted.getAttribute('data-display');
+                if (display) {
+                    addSpecificTestSelection(code, display);
+                    testInput.value = '';
+                    hideTestDropdown();
+                }
+                return;
+            } else if (dropdown.style.display !== 'none' && testInput.value.trim()) {
+                // Dropdown is visible with options - check if it's for the current input
+                // by comparing against cache. If cache matches current input, use it
+                const matchFound = window.lastTestSearchResults && window.lastTestSearchResults.some(t => 
+                    t.display && t.display.toLowerCase().includes(testInput.value.trim().toLowerCase())
+                );
+                if (matchFound) {
+                    // Cache has results for current input, get data from first option directly
+                    const firstOption = options[0];
+                    const code = firstOption.getAttribute('data-code');
+                    const display = firstOption.getAttribute('data-display');
+                    if (display) {
+                        addSpecificTestSelection(code, display);
+                        testInput.value = '';
+                        hideTestDropdown();
+                    }
+                    return;
+                }
             }
+        }
+        
+        // No matching dropdown options - trigger fresh search and wait
+        if (testInput.value.trim()) {
+            triggerTestSearchAndWait().then(() => {
+                setTimeout(addTestSelection, 50);
+            });
         } else {
             setTimeout(addTestSelection, 10);
         }
     } else if (e.key === 'Tab') {
-        setTimeout(addTestSelection, 10);
+        // Trigger fresh search for Tab key
+        if (testInput.value.trim()) {
+            triggerTestSearchAndWait().then(() => {
+                setTimeout(addTestSelection, 50);
+            });
+        } else {
+            setTimeout(addTestSelection, 10);
+        }
         hideTestDropdown();
     } else if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -603,6 +691,59 @@ document.getElementById('testName').addEventListener('keydown', function(e) {
         navigateDropdown('up');
     }
 });
+
+// Function to trigger HTMX search and wait for completion
+function triggerTestSearchAndWait() {
+    return new Promise((resolve) => {
+        const testInput = document.getElementById('testName');
+        const dropdown = document.getElementById('testNameDropdown');
+        
+        // Build the request parameters
+        const requestCategory = testInput.closest('form').elements['requestCategory'].value;
+        const url = `/fhir/diagvalueset/expand?testName=${encodeURIComponent(testInput.value)}&requestCategory=${encodeURIComponent(requestCategory)}`;
+        
+        console.log('[triggerTestSearchAndWait] Triggering HTMX search for:', testInput.value);
+        
+        // Use htmx.ajax with explicit handling
+        const xhr = new XMLHttpRequest();
+        xhr.addEventListener('loadend', function() {
+            console.log('[triggerTestSearchAndWait] Request completed, status:', xhr.status);
+            // Update dropdown with response
+            if (xhr.status === 200) {
+                dropdown.innerHTML = xhr.responseText;
+                
+                // Re-cache the search results
+                const testOptions = dropdown.querySelectorAll('.test-option');
+                window.lastTestSearchResults = [];
+                testOptions.forEach(option => {
+                    const code = option.getAttribute('data-code');
+                    const display = option.getAttribute('data-display');
+                    if (code || display) {
+                        window.lastTestSearchResults.push({ code, display });
+                    }
+                });
+                console.log(`[triggerTestSearchAndWait] Cached ${window.lastTestSearchResults.length} results:`, window.lastTestSearchResults);
+            }
+            resolve();
+        });
+        
+        xhr.addEventListener('error', function() {
+            console.error('[triggerTestSearchAndWait] Request failed');
+            resolve();
+        });
+        
+        xhr.open('GET', url);
+        xhr.send();
+        
+        // Safety timeout
+        setTimeout(() => {
+            if (xhr.readyState !== 4) {
+                console.log('[triggerTestSearchAndWait] Timeout, resolving anyway');
+                resolve();
+            }
+        }, 2000);
+    });
+}
 
 // Function to navigate dropdown with arrow keys
 function navigateDropdown(direction) {
@@ -640,6 +781,17 @@ document.body.addEventListener('htmx:afterRequest', function(evt) {
         if (dropdown && resultsDiv && countSpan) {
             const testOptions = dropdown.querySelectorAll('.test-option');
             const optionCount = testOptions.length;
+            
+            // Cache the search results for later lookup
+            window.lastTestSearchResults = [];
+            testOptions.forEach(option => {
+                const code = option.getAttribute('data-code');
+                const display = option.getAttribute('data-display');
+                if (code || display) {
+                    window.lastTestSearchResults.push({ code, display });
+                }
+            });
+            console.log(`[HTMX afterRequest] Cached ${window.lastTestSearchResults.length} test results:`, window.lastTestSearchResults);
             
             if (optionCount > 0) {
                 // Show dropdown with results

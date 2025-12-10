@@ -24,6 +24,7 @@ def _build_servicerequest_code(test):
     Build the code element for ServiceRequest based on test data.
     If no code is provided, only include text field (no coding array).
     If code is provided, include both coding and text.
+    The display should already be the official SNOMED display from the client.
     """
     import logging
     logging.info(f"_build_servicerequest_code called with test: {test}")
@@ -40,8 +41,8 @@ def _build_servicerequest_code(test):
             "text": test_display
         }
     else:
-        # Code provided - include both coding and text
-        logging.info("Code provided, returning coding + text format")
+        # Code provided - use the display as-is (should be official display from client)
+        logging.info(f"Code provided: {test_code}, display: '{test_display}'")
         return {
             "coding": [{
                 "system": "http://snomed.info/sct",  
@@ -50,6 +51,7 @@ def _build_servicerequest_code(test):
             }],
             "text": test_display
         }
+
 import os
 from fhirutils import fhir_get
 import base64
@@ -561,11 +563,7 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                 }]
             }],
             "code": {
-                "coding": [{
-                    "system": "http://snomed.info/sct",
-                    "code": "77386006",
-                    "display": "Pregnancy"
-                },
+                "coding": [
                 {
                     "system": "http://loinc.org",
                     "code": "82810-3",

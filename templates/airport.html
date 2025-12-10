@@ -151,6 +151,7 @@
 <script>
 let currentOrganisation = null;
 let currentOffset = 0;
+let currentTasks = {};
 const pageSize = 20;
 
 // Helper function to get FHIR headers from localStorage
@@ -286,6 +287,7 @@ function loadTasks() {
             
             const tasks = data.tasks || [];
             const groupTasks = data.groupTasks || [];
+            currentTasks = {};
             const totalCount = data.totalCount || 0;
             
             if (tasks.length === 0 && groupTasks.length === 0) {
@@ -321,6 +323,7 @@ function loadTasks() {
             
             // Add group tasks
             groupTasks.forEach(task => {
+                currentTasks[task.id] = task;
                 const dob = task.patient_dob ? ` (DOB: ${task.patient_dob})` : '';
                 const serviceRequestDisplay = task.serviceRequest?.placer_group_number ? escapeHtml(task.serviceRequest.placer_group_number) : escapeHtml(task.description);
                 html += `
@@ -346,25 +349,10 @@ function loadTasks() {
                 `;
             });
             
-            // Add child tasks
+            // Child tasks are not displayed in table - only used for SR code extraction in backend
+            // Store them in currentTasks for details panel access if needed
             tasks.forEach(task => {
-                const dob = task.patient_dob ? ` (DOB: ${task.patient_dob})` : '';
-                const serviceRequestDisplay = task.serviceRequest?.placer_group_number ? escapeHtml(task.serviceRequest.placer_group_number) : escapeHtml(task.description);
-                html += `
-                    <tr>
-                        <td>${escapeHtml(task.patient_name)}${dob}</td>
-                        <td>${getFirstIdentifier(task.patient_identifiers)}</td>
-                        <td>${serviceRequestDisplay}</td>
-                        <td><span class="badge bg-warning">${escapeHtml(task.status)}</span></td>
-                        <td><span class="badge bg-secondary">${escapeHtml(task.priority)}</span></td>
-                        <td>
-                            <button class="btn btn-sm btn-info" onclick="showDetails('${task.id}')">
-                                <i class="fas fa-info-circle me-1"></i>
-                                Details
-                            </button>
-                        </td>
-                    </tr>
-                `;
+                currentTasks[task.id] = task;
             });
             
             html += `
@@ -425,12 +413,23 @@ function updateTaskStatus(taskId, newStatus) {
     const formData = new FormData();
     formData.append('newStatus', newStatus);
     
+    // Get FHIR headers but don't set Content-Type (browser will set it for FormData)
+    const headers = getFhirHeaders();
+    delete headers['Content-Type']; // Remove Content-Type so browser sets it with boundary for multipart/form-data
+    
     fetch(`/api/task-groups/${taskId}/status`, {
         method: 'POST',
-        headers: getFhirHeaders(),
+        headers: headers,
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(err => {
+                throw new Error(err.message || err.error || `HTTP ${response.status}`);
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         button.disabled = false;
         
@@ -438,36 +437,114 @@ function updateTaskStatus(taskId, newStatus) {
             showToast('danger', 'Invalid Transition', data.message || data.error);
             loadTasks(); // Reload to reset the dropdown
         } else {
-            showToast('success', 'Status Updated', `Task status updated to ${newStatus}`);
-            loadTasks(); // Reload tasks to reflect changes
+            const statusText = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
+            showToast('success', 'Status Updated', `Task group and ${data.updatedCount} child task(s) updated to ${statusText}. Tasks removed from requested queue.`);
+            
+            // Reload tasks after a brief delay to ensure FHIR server has processed the update
+            setTimeout(() => {
+                loadTasks();
+            }, 500);
         }
     })
     .catch(error => {
         button.disabled = false;
         console.error('Error updating status:', error);
-        showToast('danger', 'Error', 'Failed to update task status.');
+        showToast('danger', 'Error', error.message || 'Failed to update task status.');
+        loadTasks(); // Reload to reset the dropdown
     });
 }
 
 function showDetails(taskId) {
     const detailsPanel = document.getElementById('detailsPanel');
     const detailsContent = document.getElementById('detailsContent');
+    const task = currentTasks[taskId];
+
+    console.log('showDetails called for taskId:', taskId);
+    console.log('Task data:', task);
+
+    if (!task) {
+        detailsContent.innerHTML = `<p class="text-danger">Task details not found.</p>`;
+        detailsPanel.classList.remove('d-none');
+        return;
+    }
+
+    // Helper function to get status badge color
+    function getStatusBadgeColor(status) {
+        const statusMap = {
+            'requested': 'primary',
+            'accepted': 'success',
+            'in-progress': 'info',
+            'completed': 'success',
+            'failed': 'danger',
+            'cancelled': 'warning',
+            'unknown': 'secondary'
+        };
+        return statusMap[status] || 'secondary';
+    }
+
+    const sr = task.serviceRequest || {};
+    console.log('ServiceRequest:', sr);
+    console.log('SR codes array:', sr.codes);
+    console.log('Child tasks:', task.childTasks);
     
-    // For now, show basic details from the task data
-    // In a full implementation, you'd fetch detailed ServiceRequest info
+    // Build individual tasks display
+    let testsHtml = '';
+    if (task.childTasks && task.childTasks.length > 0) {
+        // Display individual child tasks with their code displays
+        testsHtml = '<table class="table table-sm table-bordered mt-2"><thead><tr><th>Task ID</th><th>Test</th><th>Status</th></tr></thead><tbody>';
+        task.childTasks.forEach(child => {
+            const childStatus = child.status || 'unknown';
+            const statusBadge = `<span class="badge bg-${getStatusBadgeColor(childStatus)}">${escapeHtml(childStatus)}</span>`;
+            testsHtml += `
+                <tr>
+                    <td>${escapeHtml(child.id)}</td>
+                    <td>${escapeHtml(child.codeDisplay || 'No test specified')}</td>
+                    <td>${statusBadge}</td>
+                </tr>
+            `;
+        });
+        testsHtml += '</tbody></table>';
+    } else {
+        // Fallback to codes array display
+        const codes = Array.isArray(sr.codes) ? sr.codes.filter(Boolean) : [];
+        const fallbackDisplay = sr.code || sr.description || '';
+        const displays = codes.length ? codes : (fallbackDisplay ? [fallbackDisplay] : []);
+        
+        console.log('Codes after filtering:', codes);
+        console.log('Fallback display:', fallbackDisplay);
+        console.log('Final displays array:', displays);
+        
+        testsHtml = displays.length
+            ? `<ul class="mb-2">${displays.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>`
+            : `<p class="text-muted mb-2">No requested tests provided.</p>`;
+    }
+
+    const identifier = formatIdentifier(task.patient_identifiers);
+    const placer = sr.placer_group_number ? escapeHtml(sr.placer_group_number) : '-';
+    const status = task.status ? escapeHtml(task.status) : 'unknown';
+    const priority = task.priority ? escapeHtml(task.priority) : 'routine';
+
     detailsContent.innerHTML = `
         <div class="row">
             <div class="col-md-6">
-                <p><strong>Task ID:</strong> ${escapeHtml(taskId)}</p>
-                <p><strong>Service Request:</strong> Detailed view coming soon</p>
+                <p><strong>Task ID:</strong> ${escapeHtml(task.id)}</p>
+                <p><strong>Patient:</strong> ${escapeHtml(task.patient_name || 'Unknown')}</p>
+                <p><strong>Identifier:</strong> ${identifier}</p>
+                <p><strong>Placer Group #:</strong> ${placer}</p>
             </div>
             <div class="col-md-6">
-                <p><strong>Status:</strong> Check the table above</p>
-                <p><strong>Priority:</strong> Check the table above</p>
+                <p><strong>Status:</strong> ${status}</p>
+                <p><strong>Priority:</strong> ${priority}</p>
+            </div>
+        </div>
+        <div class="row mt-2">
+            <div class="col-12">
+                <p><strong>Requested Tests:</strong></p>
+                ${testsHtml}
             </div>
         </div>
     `;
-    
+
     detailsPanel.classList.remove('d-none');
     detailsPanel.scrollIntoView({ behavior: 'smooth' });
 }
@@ -511,6 +588,14 @@ if (typeof window.bootstrap === 'undefined') {
         console.warn(`Toast (${type}): ${title} - ${message}`);
         // Fallback: just log to console
     };
+}
+
+function formatIdentifier(identifiers) {
+    if (!identifiers) return '-';
+    if (identifiers.ihi) return `IHI: ${escapeHtml(identifiers.ihi)}`;
+    if (identifiers.medicare) return `Medicare: ${escapeHtml(identifiers.medicare)}`;
+    if (identifiers.dva) return `DVA: ${escapeHtml(identifiers.dva)}`;
+    return '-';
 }
 
 function escapeHtml(text) {

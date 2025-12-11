@@ -31,12 +31,29 @@
     </div>
 
     <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <label class="form-label fw-bold">Request Context <small class="fw-normal text-muted">(filters organisations)</small></label>
+                    <div class="btn-group w-100" role="group" aria-label="Request context">
+                        <input type="radio" class="btn-check" name="requestContext" id="contextPathology" value="pathology" autocomplete="off">
+                        <label class="btn btn-outline-primary" for="contextPathology">
+                            <i class="fas fa-flask me-1"></i>Pathology
+                        </label>
+                        <input type="radio" class="btn-check" name="requestContext" id="contextRadiology" value="radiology" autocomplete="off">
+                        <label class="btn btn-outline-primary" for="contextRadiology">
+                            <i class="fas fa-x-ray me-1"></i>Radiology
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="col-md-4">
             <div class="card">
                 <div class="card-body">
                     <label for="organisationSelect" class="form-label fw-bold">Select Organisation</label>
                     <select id="organisationSelect" class="form-select" required>
-                        <option value="">Loading organisations...</option>
+                        <option value="">Select a request context first...</option>
                     </select>
                     <div id="orgLoader" class="htmx-indicator mt-2">
                         <div class="spinner-border spinner-border-sm text-primary" role="status">
@@ -116,6 +133,7 @@
 let currentOrganisation = null;
 let currentOffset = 0;
 let currentTasks = {};
+let allOrganisations = []; // Store all organisations for filtering
 const pageSize = 20;
 
 // Helper function to get FHIR headers from localStorage
@@ -163,6 +181,33 @@ const STATUS_LABELS = {
     'cancelled': 'Cancel'
 };
 
+// Business status codes valid for each Task status - matches backend BUSINESS_STATUS_BY_TASK_STATUS
+const BUSINESS_STATUS_BY_TASK_STATUS = {
+    'accepted': [
+        {code: 'booked', display: 'Booked', context: 'shared'}
+    ],
+    'in-progress': [
+        {code: 'preliminary', display: 'Preliminary Result', context: 'shared'},
+        {code: 'collected', display: 'Specimen Collected', context: 'pathology'},
+        {code: 'in-lab', display: 'In Lab', context: 'pathology'},
+        {code: 'acquired', display: 'Image Acquired', context: 'radiology'}
+    ],
+    'completed': [
+        {code: 'addendum', display: 'Addendum', context: 'shared'}
+    ],
+    'cancelled': [
+        {code: 'claimed', display: 'Claimed by Alt. Filler', context: 'shared'},
+        {code: 'user-cancelled', display: 'User Cancelled', context: 'shared'},
+        {code: 'cancel-handled', display: 'Cancellation Handled', context: 'shared'}
+    ],
+    'rejected': [
+        {code: 'data-issue', display: 'Data Issue', context: 'shared'}
+    ]
+};
+
+// Get current request context (pathology or radiology) - default to shared
+let currentRequestContext = 'shared';
+
 // Generate status transition dropdown options based on current status
 function getStatusTransitionOptions(currentStatus) {
     const transitions = TASK_STATUS_TRANSITIONS[currentStatus?.toLowerCase()] || [];
@@ -170,6 +215,20 @@ function getStatusTransitionOptions(currentStatus) {
     
     return transitions.map(status => 
         `<option value="${status}">${STATUS_LABELS[status] || status.charAt(0).toUpperCase() + status.slice(1)}</option>`
+    ).join('');
+}
+
+// Generate business status dropdown options based on current task status and context
+function getBusinessStatusOptions(taskStatus, context = 'shared') {
+    const statuses = BUSINESS_STATUS_BY_TASK_STATUS[taskStatus?.toLowerCase()] || [];
+    if (statuses.length === 0) return '';
+    
+    // Filter by context - include 'shared' and context-specific
+    const filteredStatuses = statuses.filter(s => s.context === 'shared' || s.context === context);
+    if (filteredStatuses.length === 0) return '';
+    
+    return filteredStatuses.map(s => 
+        `<option value="${s.code}">${s.display}</option>`
     ).join('');
 }
 
@@ -187,6 +246,20 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('tasksContainer').innerHTML = '<div class="alert alert-info m-3">Select an organisation to view tasks</div>';
             document.getElementById('paginationContainer').classList.add('d-none');
         }
+    });
+    
+    // Add change listeners for request context radio buttons
+    document.querySelectorAll('input[name="requestContext"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            currentRequestContext = this.value;
+            console.log('Request context changed to:', currentRequestContext);
+            // Filter organisations based on new context
+            filterOrganisations();
+            // Reload tasks to update business status dropdowns (if org still selected)
+            if (currentOrganisation) {
+                loadTasks();
+            }
+        });
     });
 });
 
@@ -216,13 +289,11 @@ function loadOrganisations() {
                 return;
             }
             
-            select.innerHTML = '<option value="">Select an organisation...</option>';
-            organisations.forEach(org => {
-                const option = document.createElement('option');
-                option.value = JSON.stringify(org);
-                option.textContent = `${org.name} (${org.identifier})`;
-                select.appendChild(option);
-            });
+            // Store all organisations for filtering
+            allOrganisations = organisations;
+            
+            // Apply initial filter based on current context
+            filterOrganisations();
         })
         .catch(error => {
             loader.style.display = 'none';
@@ -232,6 +303,83 @@ function loadOrganisations() {
                 showToast('danger', 'Error', 'Failed to load organisations.');
             }
         });
+}
+
+function filterOrganisations() {
+    const select = document.getElementById('organisationSelect');
+    
+    // Filter organisations based on current request context
+    // Match org.type to currentRequestContext (pathology, radiology, other)
+    const filteredOrgs = allOrganisations.filter(org => {
+        // If no type specified, show in all contexts
+        if (!org.type) return true;
+        
+        const orgType = org.type.toLowerCase();
+        
+        // Match pathology context to pathology orgs
+        if (currentRequestContext === 'pathology') {
+            return orgType.includes('pathology') || orgType.includes('laboratory') || orgType.includes('path');
+        }
+        // Match radiology context to radiology orgs
+        if (currentRequestContext === 'radiology') {
+            return orgType.includes('radiology') || orgType.includes('imaging') || orgType.includes('rad');
+        }
+        // For 'other', show orgs that don't match pathology or radiology
+        if (currentRequestContext === 'other') {
+            return !orgType.includes('pathology') && !orgType.includes('laboratory') && !orgType.includes('path') &&
+                   !orgType.includes('radiology') && !orgType.includes('imaging') && !orgType.includes('rad');
+        }
+        
+        return true;
+    });
+    
+    // Clear current selection if selected org doesn't match new filter
+    const currentValue = select.value;
+    let currentOrgStillValid = false;
+    
+    if (filteredOrgs.length === 0) {
+        select.innerHTML = '<option value="">No organisations match this context</option>';
+        // Reset current organisation if none match
+        currentOrganisation = null;
+        clearTasksDisplay();
+        return;
+    }
+    
+    select.innerHTML = '<option value="">Select an organisation...</option>';
+    filteredOrgs.forEach(org => {
+        const option = document.createElement('option');
+        const orgJson = JSON.stringify(org);
+        option.value = orgJson;
+        option.textContent = `${org.name} (${org.identifier})`;
+        select.appendChild(option);
+        
+        // Check if previously selected org is still in filtered list
+        if (currentValue && currentValue === orgJson) {
+            currentOrgStillValid = true;
+        }
+    });
+    
+    // Restore selection if still valid, otherwise reset
+    if (currentOrgStillValid) {
+        select.value = currentValue;
+    } else if (currentOrganisation) {
+        // Previously selected org no longer matches filter
+        currentOrganisation = null;
+        clearTasksDisplay();
+        showToast('info', 'Selection Cleared', 'Previously selected organisation does not match the new context.');
+    }
+}
+
+function clearTasksDisplay() {
+    const tableBody = document.getElementById('taskTableBody');
+    if (tableBody) {
+        tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Select an organisation to view tasks</td></tr>';
+    }
+    // Hide details panel if open
+    const detailsPanel = document.getElementById('taskDetailsPanel');
+    if (detailsPanel) {
+        detailsPanel.style.display = 'none';
+    }
 }
 
 function loadTasks() {
@@ -320,8 +468,9 @@ function loadTasks() {
                             <th>Service Request</th>
                             <th>Current Status</th>
                             <th>Update Status</th>
+                            <th>Business Status</th>
                             <th>Priority</th>
-                            <th width="150">Actions</th>
+                            <th width="100">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -365,6 +514,9 @@ function loadTasks() {
                 const statusBadgeClass = getStatusBadgeClass(task.status);
                 const statusDisplay = task.status ? task.status.charAt(0).toUpperCase() + task.status.slice(1) : 'Unknown';
                 const statusOptions = getStatusTransitionOptions(task.status);
+                const businessStatusOptions = getBusinessStatusOptions(task.status, currentRequestContext);
+                const currentBusinessStatus = task.businessStatus || '';
+                const businessStatusDisplay = currentBusinessStatus ? currentBusinessStatus.charAt(0).toUpperCase() + currentBusinessStatus.slice(1).replace('-', ' ') : '';
                 html += `
                     <tr class="table-primary">
                         <td><strong>${escapeHtml(task.patient_name)}${dob}</strong></td>
@@ -379,11 +531,18 @@ function loadTasks() {
                             </select>
                             ` : '<span class="text-muted small">No transitions</span>'}
                         </td>
+                        <td>
+                            ${businessStatusOptions.length > 0 ? `
+                            <select class="form-select form-select-sm" onchange="updateBusinessStatus('${task.id}', this.value)">
+                                <option value="">${currentBusinessStatus ? escapeHtml(businessStatusDisplay) : 'Set business status...'}</option>
+                                ${businessStatusOptions}
+                            </select>
+                            ` : '<span class="text-muted small">-</span>'}
+                        </td>
                         <td><span class="badge bg-secondary">${escapeHtml(task.priority)}</span></td>
                         <td>
-                            <button class="btn btn-sm btn-info" onclick="showDetails('${task.id}')">
-                                <i class="fas fa-info-circle me-1"></i>
-                                Details
+                            <button class="btn btn-sm btn-info" onclick="showDetails('${task.id}')" title="View Details">
+                                <i class="fas fa-info-circle"></i>
                             </button>
                         </td>
                     </tr>
@@ -507,6 +666,65 @@ function updateTaskStatus(taskId, newStatus) {
     });
 }
 
+function updateBusinessStatus(taskId, newBusinessStatus) {
+    if (!newBusinessStatus) {
+        return;
+    }
+    
+    const button = event.target;
+    button.disabled = true;
+    
+    const formData = new FormData();
+    formData.append('newBusinessStatus', newBusinessStatus);
+    formData.append('context', currentRequestContext);
+    
+    // Get FHIR headers but don't set Content-Type (browser will set it for FormData)
+    const headers = getFhirHeaders();
+    delete headers['Content-Type'];
+    
+    fetch(`/api/task-groups/${taskId}/business-status`, {
+        method: 'POST',
+        headers: headers,
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(err => {
+                throw new Error(err.message || err.error || `HTTP ${response.status}`);
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        button.disabled = false;
+        
+        if (data.error) {
+            showToast('danger', 'Invalid Business Status', data.message || data.error);
+            loadTasks(); // Reload to reset the dropdown
+        } else {
+            const statusDisplay = newBusinessStatus.charAt(0).toUpperCase() + newBusinessStatus.slice(1).replace('-', ' ');
+            showToast('success', 'Business Status Updated', `Task group and ${data.updatedCount} child task(s) updated to "${statusDisplay}". Refreshing list...`);
+            
+            // Show loading indicator immediately
+            const loader = document.getElementById('tableLoader');
+            if (loader) {
+                loader.style.display = 'inline-block';
+            }
+            
+            // Reload tasks after a brief delay
+            setTimeout(() => {
+                loadTasks();
+            }, 300);
+        }
+    })
+    .catch(error => {
+        button.disabled = false;
+        console.error('Error updating business status:', error);
+        showToast('danger', 'Error', error.message || 'Failed to update business status.');
+        loadTasks(); // Reload to reset the dropdown
+    });
+}
+
 function showDetails(taskId) {
     const detailsPanel = document.getElementById('detailsPanel');
     const detailsContent = document.getElementById('detailsContent');
@@ -540,6 +758,21 @@ function showDetails(taskId) {
         return statusMap[status?.toLowerCase()] || 'secondary';
     }
 
+    // Helper function to get priority badge color (urgent/asap/stat = red, routine = grey)
+    function getPriorityBadgeColor(priority) {
+        const p = (priority || 'routine').toLowerCase();
+        // Red for high priority items
+        if (p === 'urgent' || p === 'asap' || p === 'stat' || p === 'emergency') {
+            return 'danger';
+        }
+        // Grey for routine
+        if (p === 'routine') {
+            return 'secondary';
+        }
+        // Yellow for any other priority level
+        return 'warning';
+    }
+
     const sr = task.serviceRequest || {};
     console.log('ServiceRequest:', sr);
     console.log('SR codes array:', sr.codes);
@@ -556,17 +789,22 @@ function showDetails(taskId) {
         });
         
         // Display individual child tasks with their code displays
-        testsHtml = '<table class="table table-sm table-bordered mt-2"><thead><tr><th>Seq#</th><th>PON</th><th>Test</th><th>Status</th></tr></thead><tbody>';
+        testsHtml = '<table class="table table-sm table-bordered mt-2"><thead><tr><th>Seq#</th><th>PON</th><th>Test</th><th>Priority</th><th>Authored</th><th>Status</th></tr></thead><tbody>';
         sortedChildren.forEach(child => {
             const childStatus = child.status || 'unknown';
             const statusBadge = `<span class="badge bg-${getStatusBadgeColor(childStatus)}">${escapeHtml(childStatus)}</span>`;
             const seqDisplay = child.displaySequence != null ? child.displaySequence : '-';
             const ponDisplay = child.placerOrderNumber ? escapeHtml(child.placerOrderNumber) : '-';
+            const authoredOn = child.authoredOn ? new Date(child.authoredOn).toLocaleDateString() : '-';
+            const childPriority = child.priority || 'routine';
+            const priorityBadge = `<span class="badge bg-${getPriorityBadgeColor(childPriority)}">${escapeHtml(childPriority)}</span>`;
             testsHtml += `
                 <tr>
                     <td>${seqDisplay}</td>
                     <td><small>${ponDisplay}</small></td>
                     <td>${escapeHtml(child.codeDisplay || 'No test specified')}</td>
+                    <td>${priorityBadge}</td>
+                    <td><small>${authoredOn}</small></td>
                     <td>${statusBadge}</td>
                 </tr>
             `;
@@ -590,7 +828,18 @@ function showDetails(taskId) {
     const identifier = formatIdentifier(task.patient_identifiers);
     const placer = sr.placer_group_number ? escapeHtml(sr.placer_group_number) : '-';
     const status = task.status ? escapeHtml(task.status) : 'unknown';
-    const priority = task.priority ? escapeHtml(task.priority) : 'routine';
+    const priority = task.priority || 'routine';
+    const priorityBadge = `<span class="badge bg-${getPriorityBadgeColor(priority)}">${escapeHtml(priority)}</span>`;
+    
+    // Format business status as a tag
+    const businessStatus = task.businessStatus || '';
+    const businessStatusDisplay = businessStatus ? businessStatus.charAt(0).toUpperCase() + businessStatus.slice(1).replace(/-/g, ' ') : '';
+    const businessStatusTag = businessStatus 
+        ? `<span class="badge bg-info text-dark">${escapeHtml(businessStatusDisplay)}</span>` 
+        : '<span class="text-muted">Not set</span>';
+    
+    // Format lastModified in local date/time
+    const lastModified = task.lastModified ? new Date(task.lastModified).toLocaleString() : '-';
 
     detailsContent.innerHTML = `
         <div class="row">
@@ -602,7 +851,9 @@ function showDetails(taskId) {
             </div>
             <div class="col-md-6">
                 <p><strong>Status:</strong> ${status}</p>
-                <p><strong>Priority:</strong> ${priority}</p>
+                <p><strong>Business Status:</strong> ${businessStatusTag}</p>
+                <p><strong>Priority:</strong> ${priorityBadge}</p>
+                <p><strong>Last Modified:</strong> ${lastModified}</p>
             </div>
         </div>
         <div class="row mt-2">

@@ -1912,6 +1912,47 @@ TASK_STATUS_TRANSITIONS = {
     'cancelled': []
 }
 
+# Business status codes valid for each Task status
+# Format: status -> list of valid business status codes
+# 'shared' codes are available for both pathology and radiology
+# Context-specific codes are marked with their context
+BUSINESS_STATUS_BY_TASK_STATUS = {
+    'accepted': [
+        {'code': 'booked', 'display': 'Booked', 'context': 'shared'}
+    ],
+    'in-progress': [
+        {'code': 'preliminary', 'display': 'Preliminary Result', 'context': 'shared'},
+        {'code': 'collected', 'display': 'Specimen Collected', 'context': 'pathology'},
+        {'code': 'in-lab', 'display': 'In Lab', 'context': 'pathology'},
+        {'code': 'acquired', 'display': 'Image Acquired', 'context': 'radiology'}
+    ],
+    'completed': [
+        {'code': 'addendum', 'display': 'Addendum', 'context': 'shared'}
+    ],
+    'cancelled': [
+        {'code': 'claimed', 'display': 'Claimed by Alternative Filler', 'context': 'shared'},
+        {'code': 'user-cancelled', 'display': 'User Cancelled', 'context': 'shared'},
+        {'code': 'cancel-handled', 'display': 'Cancellation Handled', 'context': 'shared'}
+    ],
+    'rejected': [
+        {'code': 'data-issue', 'display': 'Data Issue', 'context': 'shared'}
+    ]
+}
+
+# CodeSystem for business status
+BUSINESS_STATUS_CODESYSTEM = "http://hl7.org.au/fhir/ereq/CodeSystem/au-erequesting-task-businessstatus"
+
+def get_valid_business_statuses(task_status, context='shared'):
+    """Get valid business status codes for a given task status and context."""
+    statuses = BUSINESS_STATUS_BY_TASK_STATUS.get(task_status, [])
+    # Filter by context - include 'shared' and context-specific
+    return [s for s in statuses if s['context'] == 'shared' or s['context'] == context]
+
+def is_valid_business_status(task_status, business_status_code, context='shared'):
+    """Check if a business status is valid for the given task status and context."""
+    valid_statuses = get_valid_business_statuses(task_status, context)
+    return any(s['code'] == business_status_code for s in valid_statuses)
+
 def is_valid_status_transition(current_status, target_status):
     """Check if a status transition is allowed."""
     return target_status in TASK_STATUS_TRANSITIONS.get(current_status, [])
@@ -1963,17 +2004,49 @@ def get_organisations_with_tasks():
             if resource.get('resourceType') == 'Organization':
                 org_id = resource.get('id', '')
                 identifier = resource.get('identifier', [])
+                
+                # Extract organisation type from type array
+                org_type = 'other'
+                org_type_display = ''
+                for type_obj in resource.get('type', []):
+                    for coding in type_obj.get('coding', []):
+                        code = coding.get('code', '').lower()
+                        display = coding.get('display', '')
+                        # Check for pathology or radiology indicators
+                        if 'path' in code or 'laboratory' in code or 'lab' in code:
+                            org_type = 'pathology'
+                            org_type_display = display or 'Pathology'
+                            break
+                        elif 'radio' in code or 'imaging' in code or 'diagnostic' in code:
+                            org_type = 'radiology'
+                            org_type_display = display or 'Radiology'
+                            break
+                    if org_type != 'other':
+                        break
+                
+                # Also check the name for type hints if type wasn't found
+                org_name = resource.get('name', 'Unknown')
+                if org_type == 'other':
+                    name_lower = org_name.lower()
+                    if 'pathology' in name_lower or 'laboratory' in name_lower or 'lab ' in name_lower:
+                        org_type = 'pathology'
+                        org_type_display = 'Pathology'
+                    elif 'radiology' in name_lower or 'imaging' in name_lower or 'x-ray' in name_lower:
+                        org_type = 'radiology'
+                        org_type_display = 'Radiology'
+                
                 if identifier:
                     id_obj = identifier[0]
                     id_value = id_obj.get('value', '')
                     id_system = id_obj.get('system', '')
-                    name = resource.get('name', 'Unknown')
                     if id_value and id_system:
                         org_map[id_value] = {
                             'id': org_id,
                             'identifier': id_value,
                             'system': id_system,
-                            'name': name
+                            'name': org_name,
+                            'type': org_type,
+                            'typeDisplay': org_type_display
                         }
         
         # Convert to sorted list
@@ -2117,15 +2190,17 @@ def get_tasks_by_org():
             
             # Check if this task has a partOf reference (it's a child task)
             part_of_ref = resource.get('partOf', [])
+            task_id_check = resource.get('id', '')
             if part_of_ref and len(part_of_ref) > 0:
                 parent_ref = part_of_ref[0].get('reference', '')
                 parent_task_id = parent_ref.split('/')[-1] if 'Task/' in parent_ref else ''
+                logging.info(f"Task {task_id_check} is a child task, parent={parent_task_id}, priority={resource.get('priority', 'N/A')}")
                 if parent_task_id:
                     if parent_task_id not in child_task_map:
                         child_task_map[parent_task_id] = []
                     child_task_map[parent_task_id].append(resource)
         
-        logging.info(f"Found {len(child_task_map)} group tasks with children")
+        logging.info(f"Found {len(child_task_map)} group tasks with children: {list(child_task_map.keys())[:5]}")
         
         # Third pass: process tasks with full context
         for entry in entries:
@@ -2137,6 +2212,18 @@ def get_tasks_by_org():
             task_status = resource.get('status', 'unknown')
             task_priority = resource.get('priority', 'routine')
             task_description = resource.get('description', 'No description')
+            
+            # Extract lastModified from meta
+            last_modified = resource.get('meta', {}).get('lastUpdated', '')
+            
+            # Extract businessStatus code
+            business_status = ''
+            business_status_obj = resource.get('businessStatus', {})
+            if business_status_obj:
+                if business_status_obj.get('coding'):
+                    business_status = business_status_obj['coding'][0].get('code', '')
+                elif business_status_obj.get('text'):
+                    business_status = business_status_obj.get('text', '')
             
             # Log the full task resource for first task only (for debugging)
             if task_id and not hasattr(get_tasks_by_org, '_logged_task'):
@@ -2344,6 +2431,8 @@ def get_tasks_by_org():
                 'patient_dob': patient_dob,
                 'patient_identifiers': patient_identifiers,
                 'status': task_status,
+                'businessStatus': business_status,
+                'lastModified': last_modified,
                 'priority': task_priority,
                 'description': task_description or sr_description,
                 'serviceRequest': {
@@ -2393,13 +2482,26 @@ def get_tasks_by_org():
                             if placer_order_number:
                                 break
                     
+                    # Extract authoredOn from ServiceRequest
+                    authored_on = child_sr.get('authoredOn', '') if child_sr else ''
+                    
+                    # Extract priority - prefer Task priority, fall back to ServiceRequest priority
+                    child_priority = child_task.get('priority', '')
+                    if not child_priority and child_sr:
+                        child_priority = child_sr.get('priority', 'routine')
+                    if not child_priority:
+                        child_priority = 'routine'
+                    logging.info(f"Child task {child_task_id}: priority='{child_priority}' (Task priority={child_task.get('priority', 'N/A')}, SR priority={child_sr.get('priority', 'N/A') if child_sr else 'N/A'})")
+                    
                     child_details.append({
                         'id': child_task_id,
                         'serviceRequestId': child_sr_id,
                         'codeDisplay': child_code_display,
                         'status': child_task.get('status', 'unknown'),
                         'displaySequence': display_sequence,
-                        'placerOrderNumber': placer_order_number
+                        'placerOrderNumber': placer_order_number,
+                        'authoredOn': authored_on,
+                        'priority': child_priority
                     })
                 
                 task_item['childTasks'] = child_details
@@ -2542,6 +2644,159 @@ def update_task_group_status(group_task_id):
     except Exception as e:
         logging.error(f"Error updating task group status: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/task-groups/<group_task_id>/business-status', methods=['POST'])
+@login_required
+def update_task_group_business_status(group_task_id):
+    """
+    Update business status for a task group and all its child tasks.
+    Validates that the business status is valid for the current task status.
+    """
+    try:
+        new_business_status = request.form.get('newBusinessStatus')
+        context = request.form.get('context', 'shared')  # 'pathology', 'radiology', or 'shared'
+        
+        if not new_business_status:
+            return jsonify({"error": "newBusinessStatus required"}), 400
+        
+        fhir_server_url = get_fhir_server_url()
+        auth = get_fhir_auth_credentials()
+        
+        # Get the group task first to check current status
+        group_task_url = f"{fhir_server_url}/Task/{group_task_id}"
+        group_resp = requests.get(group_task_url, auth=auth, timeout=10)
+        
+        if group_resp.status_code != 200:
+            return jsonify({"error": f"Group task not found: {group_resp.status_code}"}), 404
+        
+        group_task = group_resp.json()
+        current_status = group_task.get('status', '')
+        
+        # Validate business status for current task status
+        if not is_valid_business_status(current_status, new_business_status, context):
+            valid_statuses = get_valid_business_statuses(current_status, context)
+            return jsonify({
+                "error": "Invalid business status",
+                "message": f"Business status '{new_business_status}' is not valid for task status '{current_status}'",
+                "allowed": [s['code'] for s in valid_statuses]
+            }), 400
+        
+        # Build the businessStatus CodeableConcept
+        business_status_value = {
+            "coding": [{
+                "system": BUSINESS_STATUS_CODESYSTEM,
+                "code": new_business_status
+            }]
+        }
+        
+        # Get related child tasks
+        related_tasks_url = f"{fhir_server_url}/Task"
+        params = {
+            'part-of': f"Task/{group_task_id}"
+        }
+        
+        related_resp = requests.get(related_tasks_url, params=params, auth=auth, timeout=10)
+        related_tasks = []
+        if related_resp.status_code == 200:
+            data = related_resp.json()
+            related_tasks = data.get('entry', [])
+        
+        # Update all child tasks
+        updated_count = 0
+        failed_updates = []
+        
+        for entry in related_tasks:
+            task = entry.get('resource', {})
+            task_id = task.get('id', '')
+            task_status = task.get('status', '')
+            
+            # Only update if the business status is valid for the child task's status
+            if not is_valid_business_status(task_status, new_business_status, context):
+                failed_updates.append({
+                    'taskId': task_id,
+                    'reason': f"Business status '{new_business_status}' not valid for status '{task_status}'"
+                })
+                continue
+            
+            # Check if businessStatus already exists
+            has_business_status = 'businessStatus' in task
+            
+            # Update using JSON Patch
+            task_update_url = f"{fhir_server_url}/Task/{task_id}"
+            if has_business_status:
+                patch_payload = [
+                    {"op": "replace", "path": "/businessStatus", "value": business_status_value}
+                ]
+            else:
+                patch_payload = [
+                    {"op": "add", "path": "/businessStatus", "value": business_status_value}
+                ]
+            
+            patch_headers = {'Content-Type': 'application/json-patch+json'}
+            update_resp = requests.patch(task_update_url, json=patch_payload, auth=auth, headers=patch_headers, timeout=10)
+            
+            if update_resp.status_code in [200, 201]:
+                updated_count += 1
+                logging.info(f"Updated task {task_id} businessStatus to {new_business_status}")
+            else:
+                error_detail = update_resp.text[:200] if update_resp.text else "No details"
+                logging.warning(f"Failed to update task {task_id} businessStatus: {update_resp.status_code} - {error_detail}")
+                failed_updates.append({
+                    'taskId': task_id,
+                    'reason': f"Server returned {update_resp.status_code}"
+                })
+        
+        # Update the group task itself
+        has_group_business_status = 'businessStatus' in group_task
+        if has_group_business_status:
+            patch_payload = [
+                {"op": "replace", "path": "/businessStatus", "value": business_status_value}
+            ]
+        else:
+            patch_payload = [
+                {"op": "add", "path": "/businessStatus", "value": business_status_value}
+            ]
+        
+        patch_headers = {'Content-Type': 'application/json-patch+json'}
+        group_update_resp = requests.patch(group_task_url, json=patch_payload, auth=auth, headers=patch_headers, timeout=10)
+        
+        if group_update_resp.status_code not in [200, 201]:
+            error_detail = group_update_resp.text[:500] if group_update_resp.text else "No details"
+            logging.warning(f"Failed to update group task {group_task_id} businessStatus: {group_update_resp.status_code} - {error_detail}")
+            return jsonify({
+                'success': False,
+                'error': 'Failed to update group task businessStatus',
+                'message': f"Server returned {group_update_resp.status_code}",
+                'updatedCount': updated_count
+            }), 500
+        
+        logging.info(f"Successfully updated group task {group_task_id} businessStatus to {new_business_status}")
+        
+        return jsonify({
+            'success': True,
+            'updatedCount': updated_count,
+            'failedCount': len(failed_updates),
+            'failedUpdates': failed_updates,
+            'newBusinessStatus': new_business_status
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error updating task group business status: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/business-statuses/<task_status>')
+@login_required
+def get_business_statuses_for_status(task_status):
+    """Get valid business statuses for a given task status."""
+    context = request.args.get('context', 'shared')
+    statuses = get_valid_business_statuses(task_status, context)
+    return jsonify({
+        'taskStatus': task_status,
+        'context': context,
+        'businessStatuses': statuses
+    }), 200
 
 
 if __name__ == '__main__' and os.environ.get('TESTING') != 'true':

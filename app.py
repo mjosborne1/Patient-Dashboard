@@ -1939,10 +1939,10 @@ def get_organisations_with_tasks():
         task_url = f"{fhir_server_url}/Task"
         
         # Use tuple list for parameters to allow proper _include handling
+        # No status filter - show all tasks
         params_list = [
             ('_tag', 'http://terminology.hl7.org.au/CodeSystem/resource-tag|fulfilment-task-group'),
-            ('_include', 'Task:owner'),
-            ('status', 'requested')
+            ('_include', 'Task:owner')
         ]
         
         logging.info("Fetching organisations with group tasks")
@@ -1999,7 +1999,6 @@ def debug_tasks():
         task_url = f"{fhir_server_url}/Task"
         params_list = [
             ('owner:Organization.identifier', f"http://ns.electronichealth.net.au/id/hi/hpio/1.0|{org_identifier}"),
-            ('status', 'requested'),
             ('_tag', 'http://terminology.hl7.org.au/CodeSystem/resource-tag|fulfilment-task-group'),
             ('_include', 'Task:focus'),
             ('_include', 'Task:patient'),
@@ -2044,12 +2043,11 @@ def get_tasks_by_org():
         if auth:
             logging.info(f"Auth username: {auth[0]}")
         
-        # Query tasks with owner org identifier and status=requested
+        # Query tasks with owner org identifier - no status filter, show all tasks
         # Start with minimal params matching your working Postman query
         task_url = f"{fhir_server_url}/Task"
         params_list = [
             ('owner:Organization.identifier', f"http://ns.electronichealth.net.au/id/hi/hpio/1.0|{org_identifier}"),
-            ('status', 'requested'),
             ('_tag', 'http://terminology.hl7.org.au/CodeSystem/resource-tag|fulfilment-task-group')
         ]
         

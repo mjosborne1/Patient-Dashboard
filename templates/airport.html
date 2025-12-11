@@ -141,6 +141,38 @@ function getFhirHeaders() {
     return headers;
 }
 
+// Task status transitions - matches backend TASK_STATUS_TRANSITIONS
+const TASK_STATUS_TRANSITIONS = {
+    'draft': ['requested', 'cancelled'],
+    'requested': ['accepted', 'cancelled'],
+    'accepted': ['in-progress', 'completed', 'failed', 'cancelled'],
+    'in-progress': ['completed', 'failed', 'cancelled'],
+    'completed': [],
+    'failed': [],
+    'cancelled': []
+};
+
+// Status display labels
+const STATUS_LABELS = {
+    'draft': 'Draft',
+    'requested': 'Requested',
+    'accepted': 'Accept',
+    'in-progress': 'In Progress',
+    'completed': 'Complete',
+    'failed': 'Failed',
+    'cancelled': 'Cancel'
+};
+
+// Generate status transition dropdown options based on current status
+function getStatusTransitionOptions(currentStatus) {
+    const transitions = TASK_STATUS_TRANSITIONS[currentStatus?.toLowerCase()] || [];
+    if (transitions.length === 0) return '';
+    
+    return transitions.map(status => 
+        `<option value="${status}">${STATUS_LABELS[status] || status.charAt(0).toUpperCase() + status.slice(1)}</option>`
+    ).join('');
+}
+
 // Load organisations on page load
 document.addEventListener('DOMContentLoaded', function() {
     loadOrganisations();
@@ -332,6 +364,7 @@ function loadTasks() {
                 const serviceRequestDisplay = task.serviceRequest?.placer_group_number ? escapeHtml(task.serviceRequest.placer_group_number) : escapeHtml(task.description);
                 const statusBadgeClass = getStatusBadgeClass(task.status);
                 const statusDisplay = task.status ? task.status.charAt(0).toUpperCase() + task.status.slice(1) : 'Unknown';
+                const statusOptions = getStatusTransitionOptions(task.status);
                 html += `
                     <tr class="table-primary">
                         <td><strong>${escapeHtml(task.patient_name)}${dob}</strong></td>
@@ -339,11 +372,12 @@ function loadTasks() {
                         <td><strong>${serviceRequestDisplay}</strong></td>
                         <td><span class="badge ${statusBadgeClass}">${escapeHtml(statusDisplay)}</span></td>
                         <td>
+                            ${statusOptions.length > 0 ? `
                             <select class="form-select form-select-sm" onchange="updateTaskStatus('${task.id}', this.value)">
-                                <option value="">Select status...</option>
-                                <option value="accepted" ${task.status === 'accepted' ? 'selected' : ''}>Accept</option>
-                                <option value="cancelled" ${task.status === 'cancelled' ? 'selected' : ''}>Cancel</option>
+                                <option value="">Update status...</option>
+                                ${statusOptions}
                             </select>
+                            ` : '<span class="text-muted small">No transitions</span>'}
                         </td>
                         <td><span class="badge bg-secondary">${escapeHtml(task.priority)}</span></td>
                         <td>

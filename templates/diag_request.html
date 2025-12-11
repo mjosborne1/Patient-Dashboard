@@ -31,16 +31,29 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
+          <!-- Requester Organisation Dropdown -->
+          <div class="mb-3" id="requesterOrgDropdownContainer">
+            <label for="requesterOrgList" class="form-label">Select Requesting Organisation</label>
+            <select class="form-select" id="requesterOrgList" name="requesterOrganisation" required
+                    hx-get="/fhir/RequesterOrganisations"
+                    hx-trigger="shown.bs.modal from:#createDiagnosticRequestModal"
+                    hx-target="#requesterOrgList"
+                    hx-swap="outerHTML">
+              <option value="">Select an organisation...</option>
+              <!-- Options will be loaded here by HTMX -->
+            </select>
+          </div>
           <!-- Requester Dropdown -->
           <div class="mb-3" id="requesterDropdownContainer">
             <label for="requesterList" class="form-label">Select Requester</label>
             <select class="form-select" id="requesterList" name="requester" required
                     hx-get="/fhir/Requesters"
-                    hx-trigger="shown.bs.modal from:#createDiagnosticRequestModal"
+                    hx-trigger="change from:#requesterOrgList"
+                    hx-include="#requesterOrgList"
                     hx-target="#requesterList"
                     hx-swap="outerHTML">
-              <option value="">Select a requester...</option>
-              <!-- Options will be loaded here by HTMX -->
+              <option value="">Select a requesting practitioner ...</option>
+              <!-- Options will be loaded here by HTMX when organisation is selected -->
             </select>
           </div>
           <!-- get patient id from the session -->
@@ -1019,9 +1032,13 @@ function renderSelectedReasons() {
     hidden.value = JSON.stringify(window.selectedReasons);
 }
 
-function addReasonSelection() {
+function addReasonSelection(providedCode, providedDisplay) {
     const input = document.getElementById('reason');
-    const value = input.value.trim();
+    // Use provided display if available, otherwise get from input
+    const value = providedDisplay || input.value.trim();
+    // Use provided code if available
+    let reasonCode = providedCode || null;
+    
     if (value && Array.isArray(window.selectedReasons)) {
         // Check if we already have this reason (by display name)
         const existingReason = window.selectedReasons.find(reason => 
@@ -1029,16 +1046,16 @@ function addReasonSelection() {
         );
         
         if (!existingReason) {
-            // Try to find the corresponding option in the dropdown to get the code
-            const dropdown = document.getElementById('reasonDropdown');
-            let reasonCode = null;
-            
-            if (dropdown) {
-                const options = dropdown.querySelectorAll('.reason-option');
-                for (let option of options) {
-                    if (option.getAttribute('data-display') === value) {
-                        reasonCode = option.getAttribute('data-code') || null;
-                        break;
+            // If code wasn't provided, try to find it from the dropdown (for custom text or keyboard entry)
+            if (!reasonCode) {
+                const dropdown = document.getElementById('reasonDropdown');
+                if (dropdown) {
+                    const options = dropdown.querySelectorAll('.reason-option');
+                    for (let option of options) {
+                        if (option.getAttribute('data-display') === value) {
+                            reasonCode = option.getAttribute('data-code') || null;
+                            break;
+                        }
                     }
                 }
             }
@@ -1118,7 +1135,17 @@ function removeReason(idx) {
 }
 
 // Add reason on Enter, Tab, or when a dropdown option is picked
-document.getElementById('reason').addEventListener('change', addReasonSelection);
+// Wrap in arrow function to prevent Event object from being passed as code parameter
+// Also check if dropdown is visible - if so, user is selecting from dropdown, not entering custom text
+document.getElementById('reason').addEventListener('change', () => {
+    const dropdown = document.getElementById('reasonDropdown');
+    // If dropdown is visible and has options, user might be clicking on an option
+    // Don't add partial text as a reason - let the click handler do it
+    if (dropdown && dropdown.style.display !== 'none' && dropdown.querySelectorAll('.reason-option').length > 0) {
+        return; // Skip - let click handler process the selection
+    }
+    addReasonSelection();
+});
 document.getElementById('reason').addEventListener('keydown', function(e) {
     const dropdown = document.getElementById('reasonDropdown');
     const options = dropdown.querySelectorAll('.reason-option');
@@ -1216,16 +1243,15 @@ document.body.addEventListener('htmx:afterRequest', function(evt) {
                         const display = this.getAttribute('data-display');
                         const code = this.getAttribute('data-code');
                         
-                        // Set the input value and trigger reason addition
-                        reasonInput.value = display;
+                        // Clear the input
+                        reasonInput.value = '';
                         
                         // Hide dropdown immediately
                         hideReasonDropdown();
                         
-                        // Add the selection after a small delay to ensure dropdown is hidden
-                        setTimeout(() => {
-                            addReasonSelection();
-                        }, 50);
+                        // Add the selection directly with code and display
+                        // Pass the code and display directly to avoid lookup issues
+                        addReasonSelection(code, display);
                     });
                 });
                 
@@ -1515,8 +1541,7 @@ document.querySelectorAll('input[name="requestingContext"]').forEach(radio => {
     radio.addEventListener('change', updateSpecialistDropdown);
 });
 
-// Add reason on Enter, Tab, or when a datalist option is picked
-document.getElementById('reason').addEventListener('change', addReasonSelection);
+// NOTE: Reason change listener is defined earlier with dropdown visibility check
 // Add copyTo practitioner on Enter, Tab, or when a datalist option is picked
 document.getElementById('copyToPractitioner').addEventListener('change', addCopyToPractitionerSelection);
 document.getElementById('copyToPractitioner').addEventListener('keydown', function(e) {

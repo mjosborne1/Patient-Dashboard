@@ -1,0 +1,61 @@
+<!-- Shared Sidebar Navigation -->
+<nav class="sidebar">
+    <div class="position-sticky">
+        <div class="sidebar-logo py-3 px-2 mb-2 d-flex justify-content-center align-items-center">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="img-fluid" style="max-height: 40px;">
+        </div>
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                {% if active_page == 'airport' %}
+                <a class="nav-link" href="/">
+                {% else %}
+                <a class="nav-link{% if active_page == 'patients' %} active{% endif %}" hx-get="/fhir/Patients" hx-target="#content" hx-indicator="this" hx-swap="innerHTML transition:true">
+                {% endif %}
+                    <i class="fas fa-users"></i>
+                    <span> Patients</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link{% if active_page == 'airport' %} active{% endif %}" href="/airport">
+                    <i class="fas fa-tasks"></i>
+                    <span> Task Management</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                {% if active_page == 'airport' %}
+                <a class="nav-link" href="/">
+                {% else %}
+                <a class="nav-link{% if active_page == 'stats' %} active{% endif %}" hx-get="/fhir/Demographics" hx-target="#content" hx-indicator="this" hx-swap="innerHTML transition:true">
+                {% endif %}
+                    <i class="fas fa-chart-pie"></i>
+                    <span> Stats</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                {% if active_page == 'airport' %}
+                <a class="nav-link" href="/">
+                {% else %}
+                <a class="nav-link{% if active_page == 'insights' %} active{% endif %}" hx-get="/fhir/Dashboard" hx-target="#content" hx-indicator="this" hx-swap="innerHTML transition:true">
+                {% endif %}
+                    <i class="fas fa-chart-bar"></i>
+                    <span> Insights</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#fhirServerModal">
+                    <i class="fas fa-cog me-1"></i><span> Settings</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="https://github.com/daveymason/Patient-Dashboard-htmx-python-fhir" target="_blank">
+                    <i class="fab fa-github"></i><span>  Original Repo</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="https://github.com/mjosborne1/Patient-Dashboard" target="_blank">
+                    <i class="fab fa-github"></i><span>  Current Repo</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</nav>

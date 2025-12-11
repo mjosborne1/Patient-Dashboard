@@ -1,8 +1,19 @@
-<select id="requesterList" name="requester" class="form-select">
+<select id="requesterList" name="requester" class="form-select" required
+        hx-get="/fhir/Requesters"
+        hx-trigger="change from:#requesterOrgList"
+        hx-include="#requesterOrgList"
+        hx-target="#requesterList"
+        hx-swap="outerHTML">
+  {% if no_org %}
+  <option value="">Select an organisation first...</option>
+  {% elif requesters|length == 0 %}
+  <option value="">No requesters found for this organisation</option>
+  {% else %}
   <option value="">Select a requester...</option>
   {% for requester in requesters %}
     <option value="{{ requester.id }}">
       {{ requester.name }}{% if requester.specialty %} ({{ requester.specialty }}){% endif %}
     </option>
   {% endfor %}
+  {% endif %}
 </select>

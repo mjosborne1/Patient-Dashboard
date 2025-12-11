@@ -960,10 +960,20 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
         if reasons:
             reason_list = []
             for reason in reasons:
-                # Handle None values from JSON null - use empty string as fallback
-                reason_code = reason.get("code") or ""
-                reason_code = reason_code.strip() if reason_code else ""
+                # Handle None values or invalid types from JSON - use empty string as fallback
+                # reason_code must be a simple string (not dict, list, or other types)
+                reason_code = reason.get("code")
+                if reason_code is None or not isinstance(reason_code, str):
+                    # If code is not a string (e.g., a dict like {"isTrusted": true}), treat as no code
+                    reason_code = ""
+                else:
+                    reason_code = reason_code.strip()
+                
                 reason_display = reason.get("display", "")
+                if reason_display is None or not isinstance(reason_display, str):
+                    reason_display = ""
+                else:
+                    reason_display = reason_display.strip()
                 
                 # If code is empty or not provided, treat as free-text (only use text field)
                 if not reason_code:
@@ -1156,8 +1166,19 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
     
     # Add Consent (MHR Consent Withdrawal) if user opted out
     consent_opt_out = form_data.get('mhrConsentWithdrawn', False)
-    if consent_opt_out:
+    if consent_opt_out and service_requests:  # Only create if there are ServiceRequests to reference
         consent_id = str(uuid.uuid4())
+        
+        # Build provision.data array with references to all ServiceRequests
+        provision_data = []
+        for sr in service_requests:
+            provision_data.append({
+                "meaning": "dependents",
+                "reference": {
+                    "reference": f"urn:uuid:{sr['id']}"
+                }
+            })
+        
         consent = {
             "resourceType": "Consent",
             "meta": {
@@ -1171,23 +1192,47 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                 "coding": [{
                     "system": "http://terminology.hl7.org/CodeSystem/consentscope",
                     "code": "patient-privacy",
-                    "display": "Privacy"
-                }]
+                    "display": "Privacy Consent"
+                }],
+                "text": "Patient Privacy"
             },
             "category": [{
                 "coding": [{
-                    "system": "http://terminology.hl7.org/CodeSystem/consentcategorycodes",
-                    "code": "mhr",
-                    "display": "My Health Record consent"
-                }]
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+                    "code": "IDSCL",
+                    "display": "information disclosure"
+                }],
+                "text": "information disclosure"
             }],
             "patient": patient_reference,
             "dateTime": get_localtime_bne(),
+            "performer": [patient_reference],  # Patient is agreeing to the consent
+            "organization": [organization_reference] if organization_reference else [{"display": "Requesting Organisation"}],
             "policy": [{
-                "uri": "http://example.org/policies/mhr-consent-withdrawal"
+                "authority": "https://www.health.gov.au",
+                "uri": "https://www.legislation.gov.au/C2012A00063"
             }],
+            "policyRule": {
+                "coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+                    "code": "OPTIN"
+                }],
+                "text": "Opt in"
+            },
             "provision": {
-                "type": "deny"
+                "type": "deny",
+                "action": [{
+                    "coding": [{
+                        "system": "http://terminology.hl7.org/CodeSystem/consentaction",
+                        "code": "disclose",
+                        "display": "Disclose"
+                    }]
+                }],
+                "class": [{
+                    "system": "http://hl7.org/fhir/resource-types",
+                    "code": "DiagnosticReport"
+                }],
+                "data": provision_data
             }
         }
         

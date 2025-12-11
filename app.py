@@ -93,6 +93,65 @@ def test_datalist():
     with open('test_datalist.html', 'r') as f:
         return f.read()
 
+# Allowed specialty codes for requesting pathology/radiology
+# SNOMED CT codes
+ALLOWED_SPECIALTY_SNOMED_CODES = {
+    '394603008',      # Clinical immunology/allergy
+    '394593009',      # Clinical oncology
+    '24251000087109', # Occupational medicine
+    '394579002',      # Emergency medicine
+    '394589003',      # Nephrology
+    '394584008',      # Gastroenterology
+    '18803008',       # Dermatology
+    '394581000',      # Cardiothoracic surgery
+    '394592004',      # Clinical haematology
+    '394802001',      # General medicine
+    '419772000',      # Family practice
+}
+
+# ABS ANZSCO codes (Australian and New Zealand Standard Classification of Occupations)
+ALLOWED_SPECIALTY_ABS_CODES = {
+    '253314',  # Medical Oncologist
+    '253317',  # Endocrinologist
+    '253318',  # Gastroenterologist
+    '253321',  # Haematologist
+    '253324',  # Nephrologist
+    '253399',  # Internal Medicine Specialist nec
+    '253111',  # General Practitioner
+    '253112',  # Resident Medical Officer
+}
+
+def check_allowed_specialty(specialty_concepts):
+    """
+    Check if a PractitionerRole has an allowed specialty code.
+    Searches both SNOMED CT and ABS ANZSCO coding systems.
+    
+    Args:
+        specialty_concepts: List of CodeableConcept objects from PractitionerRole.specialty
+    
+    Returns:
+        tuple: (has_allowed_specialty: bool, specialty_display: str)
+    """
+    if not specialty_concepts or not isinstance(specialty_concepts, list):
+        return False, ''
+    
+    for concept in specialty_concepts:
+        for coding in concept.get('coding', []):
+            system = coding.get('system', '')
+            code = coding.get('code', '')
+            display = coding.get('display', '')
+            
+            # Check SNOMED CT codes
+            if system == "http://snomed.info/sct" and code in ALLOWED_SPECIALTY_SNOMED_CODES:
+                return True, display
+            
+            # Check ABS ANZSCO codes
+            if system == "http://www.abs.gov.au/ausstats/abs@.nsf/mf/1220.0" and code in ALLOWED_SPECIALTY_ABS_CODES:
+                return True, display
+    
+    return False, ''
+
+
 def process_patient_results(patients):
     """Process patient results for consistent display"""
     processed_patients = []
@@ -645,20 +704,124 @@ def get_immunizations(patient_id):
     else:
         return "Immunisation not found", 404
 
+@app.route('/fhir/RequesterOrganisations')
+@login_required
+def get_requester_organisations():
+    """
+    Returns a list of Organisations that have PractitionerRoles linked to them.
+    These are organisations whose practitioners can be requesters.
+    Excludes Pharmacy, Radiology, and Pathology organisations.
+    """
+    # Organisation type codes to exclude (SNOMED CT)
+    EXCLUDED_ORG_TYPE_CODES = {
+        '310074003',  # Pathology service
+        '722171005',  # Diagnostic imaging service
+        '284546000',  # Radiology department
+        '722174002',  # Radiology service
+        '264372000',  # Pharmacy
+        '80522000',   # Community pharmacy
+        '22232009',   # Hospital pharmacy
+        '38341003',   # General practice
+    }
+    
+    # Keywords to exclude from organisation names (case-insensitive)
+    EXCLUDED_NAME_KEYWORDS = [
+        'pharmacy',
+        'radiology',
+        'pathology',
+        'imaging',
+        'x-ray',
+        'xray',
+        'diagnostic',
+        'laboratory',
+        'lab ',  # with space to avoid matching words like "collaborative"
+    ]
+    
+    # Get all PractitionerRoles with their linked organisations
+    response = fhir_get("/PractitionerRole?_include=PractitionerRole:organization&_count=200", 
+                       fhir_server_url=get_fhir_server_url(), 
+                       auth_credentials=get_fhir_auth_credentials(), 
+                       timeout=10)
+    if response.status_code != 200:
+        return render_template('partials/requester_organisations.html', organisations=[])
+
+    bundle = response.json()
+    entries = bundle.get('entry', [])
+    
+    # Build a map of unique organisations, filtering out excluded types
+    organisations = {}
+    for entry in entries:
+        resource = entry.get('resource', {})
+        if resource.get('resourceType') == 'Organization':
+            org_id = resource.get('id')
+            org_name = resource.get('name', 'Unknown Organisation')
+            
+            # Check if this organisation has an excluded type code
+            is_excluded = False
+            org_types = resource.get('type', [])
+            for type_concept in org_types:
+                for coding in type_concept.get('coding', []):
+                    if coding.get('code') in EXCLUDED_ORG_TYPE_CODES:
+                        is_excluded = True
+                        logging.debug(f"Excluding org '{org_name}' by type code: {coding.get('code')}")
+                        break
+                if is_excluded:
+                    break
+            
+            # Also check name for excluded keywords
+            if not is_excluded:
+                org_name_lower = org_name.lower()
+                for keyword in EXCLUDED_NAME_KEYWORDS:
+                    if keyword in org_name_lower:
+                        is_excluded = True
+                        logging.debug(f"Excluding org '{org_name}' by name keyword: {keyword}")
+                        break
+            
+            if org_id and org_id not in organisations and not is_excluded:
+                organisations[org_id] = {
+                    "id": org_id,
+                    "name": org_name
+                }
+
+    # Sort by name
+    org_list = sorted(organisations.values(), key=lambda x: x["name"])
+    logging.info(f"Returning {len(org_list)} requester organisations (filtered from {len(entries)} entries)")
+    return render_template('partials/requester_organisations.html', organisations=org_list)
+
+
 @app.route('/fhir/Requesters')
 @login_required
 def get_requesters():
     """
-    Returns a list of PractitionerRoles with name, specialty, and PractitionerRole id for dropdown.
-    Only includes PractitionerRoles with specific specialty codes.
+    Returns a list of PractitionerRoles with name and specialty for dropdown.
+    Filters by organisation if requesterOrganisation parameter is provided.
     """
-    response = fhir_get("/PractitionerRole?_include=PractitionerRole:practitioner&_count=100", fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
+    org_id = request.args.get('requesterOrganisation', '').strip()
+    logging.info(f"get_requesters called with org_id: '{org_id}'")
+    
+    if not org_id:
+        # No organisation selected yet
+        logging.info("No organisation selected, returning empty with no_org=True")
+        return render_template('partials/requesters.html', requesters=[], no_org=True)
+    
+    # Fetch all PractitionerRoles with included practitioners (same approach as get_requester_organisations)
+    query_url = "/PractitionerRole?_include=PractitionerRole:practitioner&_count=200"
+    logging.info(f"Querying PractitionerRoles: {query_url}")
+    response = fhir_get(query_url, 
+                       fhir_server_url=get_fhir_server_url(), 
+                       auth_credentials=get_fhir_auth_credentials(), 
+                       timeout=10)
+    logging.info(f"PractitionerRole response status: {response.status_code}")
     if response.status_code != 200:
+        logging.error(f"Failed to get PractitionerRoles: {response.text[:500]}")
         return render_template('partials/requesters.html', requesters=[])
 
     bundle = response.json()
     entries = bundle.get('entry', [])
+    logging.info(f"Got {len(entries)} entries from PractitionerRole query")
+    
     practitioners = {}
+    
     # Build a map of Practitioner id to name
     for entry in entries:
         resource = entry.get('resource', {})
@@ -668,53 +831,52 @@ def get_requesters():
             name = resource.get('name', [{}])[0]
             full_name = ' '.join(name.get('given', [])) + ' ' + name.get('family', '')
             practitioners[practitioner_id] = full_name.strip()
-
-    # Allowed specialty codes
-    allowed_specialty_codes = {
-        '394603008',  # Clinical immunology/allergy
-        '394593009',  # Clinical oncology
-        '24251000087109',  # Occupational medicine
-        '394579002',  # Emergency medicine
-        '394589003',  # Nephrology
-        '394584008',  # Gastroenterology
-    }
+    
+    logging.info(f"Built practitioner map with {len(practitioners)} practitioners")
 
     requesters = []
+    # Also collect all org refs for debugging
+    all_org_refs = set()
     for entry in entries:
         resource = entry.get('resource', {})
         if resource.get('resourceType') == 'PractitionerRole':
+            # Check if this PractitionerRole belongs to the selected organisation
+            org_ref = resource.get('organization', {}).get('reference', '')
+            # org_ref is like "Organization/barney-view-private-hospital"
+            role_org_id = org_ref.split('/')[-1] if org_ref else ''
+            all_org_refs.add(role_org_id)
+            
+            if role_org_id != org_id:
+                continue  # Skip roles not belonging to selected org
+            
             role_id = resource.get('id')
             
-            # Check if this PractitionerRole has one of the allowed specialty codes
-            has_allowed_specialty = False
-            specialty_concepts = resource.get('specialty', [])
-            specialty_display = ''
+            # Get practitioner name
+            practitioner_ref = resource.get('practitioner', {}).get('reference', '')
+            practitioner_id = practitioner_ref.split('/')[-1] if practitioner_ref else ''
+            name = practitioners.get(practitioner_id, 'Unknown')
             
+            # Get specialty display (first available)
+            specialty_display = ''
+            specialty_concepts = resource.get('specialty', [])
             if specialty_concepts and isinstance(specialty_concepts, list):
                 for concept in specialty_concepts:
                     for coding in concept.get('coding', []):
-                        if (coding.get('system') == "http://snomed.info/sct" and 
-                            coding.get('code') in allowed_specialty_codes):
-                            has_allowed_specialty = True
-                            specialty_display = coding.get('display', '')
+                        if coding.get('display'):
+                            specialty_display = coding.get('display')
                             break
-                    if has_allowed_specialty:
+                    if specialty_display:
                         break
             
-            # Only add requester if specialty matches allowed codes
-            if has_allowed_specialty and specialty_display:
-                # Get practitioner name
-                practitioner_ref = resource.get('practitioner', {}).get('reference', '')
-                practitioner_id = practitioner_ref.split('/')[-1] if practitioner_ref else ''
-                name = practitioners.get(practitioner_id, 'Unknown')
-                
-                requester = {
-                    "id": role_id,
-                    "name": name,
-                    "specialty": specialty_display
-                }
-                requesters.append(requester)
+            requester = {
+                "id": role_id,
+                "name": name,
+                "specialty": specialty_display
+            }
+            requesters.append(requester)
 
+    logging.info(f"Found {len(requesters)} requesters for org {org_id}")
+    logging.info(f"All org refs found in PractitionerRoles: {list(all_org_refs)[:20]}")  # First 20
     # Sort by name
     requesters = sorted(requesters, key=lambda x: x["name"])
     return render_template('partials/requesters.html', requesters=requesters)
@@ -2312,26 +2474,43 @@ def update_task_group_status(group_task_id):
                 })
                 continue
             
-            # Update the task
-            task['status'] = new_status
+            # Update the task using JSON Patch for reliability
             task_update_url = f"{fhir_server_url}/Task/{task_id}"
-            update_resp = requests.put(task_update_url, json=task, auth=auth, timeout=10)
+            patch_payload = [
+                {"op": "replace", "path": "/status", "value": new_status}
+            ]
+            patch_headers = {'Content-Type': 'application/json-patch+json'}
+            update_resp = requests.patch(task_update_url, json=patch_payload, auth=auth, headers=patch_headers, timeout=10)
             
             if update_resp.status_code in [200, 201]:
                 updated_count += 1
                 logging.info(f"Updated task {task_id} to status {new_status}")
             else:
+                error_detail = update_resp.text[:200] if update_resp.text else "No details"
+                logging.warning(f"Failed to update task {task_id}: {update_resp.status_code} - {error_detail}")
                 failed_updates.append({
                     'taskId': task_id,
                     'reason': f"Server returned {update_resp.status_code}"
                 })
         
-        # Update the group task itself
-        group_task['status'] = new_status
-        group_update_resp = requests.put(group_task_url, json=group_task, auth=auth, timeout=10)
+        # Update the group task itself using JSON Patch
+        patch_payload = [
+            {"op": "replace", "path": "/status", "value": new_status}
+        ]
+        patch_headers = {'Content-Type': 'application/json-patch+json'}
+        group_update_resp = requests.patch(group_task_url, json=patch_payload, auth=auth, headers=patch_headers, timeout=10)
         
         if group_update_resp.status_code not in [200, 201]:
-            logging.warning(f"Failed to update group task {group_task_id}: {group_update_resp.status_code}")
+            error_detail = group_update_resp.text[:500] if group_update_resp.text else "No details"
+            logging.warning(f"Failed to update group task {group_task_id}: {group_update_resp.status_code} - {error_detail}")
+            return jsonify({
+                'success': False,
+                'error': 'Failed to update group task',
+                'message': f"Server returned {group_update_resp.status_code}",
+                'updatedCount': updated_count
+            }), 500
+        
+        logging.info(f"Successfully updated group task {group_task_id} to status {new_status}")
         
         return jsonify({
             'success': True,

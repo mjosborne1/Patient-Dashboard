@@ -1,0 +1,11 @@
+<select id="requesterOrgList" name="requesterOrganisation" class="form-select" required
+        hx-get="/fhir/Requesters"
+        hx-trigger="change"
+        hx-include="this"
+        hx-target="#requesterList"
+        hx-swap="outerHTML">
+  <option value="">Select an organisation...</option>
+  {% for org in organisations %}
+    <option value="{{ org.id }}">{{ org.name }}</option>
+  {% endfor %}
+</select>

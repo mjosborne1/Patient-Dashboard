@@ -2369,18 +2369,39 @@ def get_tasks_by_org():
                     # Get the ServiceRequest for this child task
                     child_sr = sr_map.get(child_sr_id)
                     child_code_display = ''
+                    display_sequence = None
+                    placer_order_number = ''
+                    
                     if child_sr:
                         code_obj = child_sr.get('code', {})
                         if code_obj.get('coding'):
                             child_code_display = code_obj['coding'][0].get('display', '') or code_obj['coding'][0].get('code', '')
                         elif code_obj.get('text'):
                             child_code_display = code_obj.get('text', '')
+                        
+                        # Extract displaySequence from extension
+                        for ext in child_sr.get('extension', []):
+                            if ext.get('url') == 'http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-displaysequence':
+                                display_sequence = ext.get('valueInteger')
+                                break
+                        
+                        # Extract Placer Order Number from identifier with type PLAC
+                        for identifier in child_sr.get('identifier', []):
+                            type_codings = identifier.get('type', {}).get('coding', [])
+                            for coding in type_codings:
+                                if coding.get('code') == 'PLAC':
+                                    placer_order_number = identifier.get('value', '')
+                                    break
+                            if placer_order_number:
+                                break
                     
                     child_details.append({
                         'id': child_task_id,
                         'serviceRequestId': child_sr_id,
                         'codeDisplay': child_code_display,
-                        'status': child_task.get('status', 'unknown')
+                        'status': child_task.get('status', 'unknown'),
+                        'displaySequence': display_sequence,
+                        'placerOrderNumber': placer_order_number
                     })
                 
                 task_item['childTasks'] = child_details

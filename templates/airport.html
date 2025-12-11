@@ -445,12 +445,24 @@ function updateTaskStatus(taskId, newStatus) {
             loadTasks(); // Reload to reset the dropdown
         } else {
             const statusText = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
-            showToast('success', 'Status Updated', `Task group and ${data.updatedCount} child task(s) updated to ${statusText}. Tasks removed from requested queue.`);
+            showToast('success', 'Status Updated', `Task group and ${data.updatedCount} child task(s) updated to ${statusText}. Refreshing list...`);
+            
+            // Close the details panel since the task status has changed
+            const detailsPanel = document.getElementById('detailsPanel');
+            if (detailsPanel) {
+                detailsPanel.classList.add('d-none');
+            }
+            
+            // Show loading indicator immediately
+            const loader = document.getElementById('tableLoader');
+            if (loader) {
+                loader.style.display = 'inline-block';
+            }
             
             // Reload tasks after a brief delay to ensure FHIR server has processed the update
             setTimeout(() => {
                 loadTasks();
-            }, 500);
+            }, 300);
         }
     })
     .catch(error => {
@@ -502,14 +514,24 @@ function showDetails(taskId) {
     // Build individual tasks display
     let testsHtml = '';
     if (task.childTasks && task.childTasks.length > 0) {
+        // Sort by displaySequence if available
+        const sortedChildren = [...task.childTasks].sort((a, b) => {
+            const seqA = a.displaySequence ?? 999;
+            const seqB = b.displaySequence ?? 999;
+            return seqA - seqB;
+        });
+        
         // Display individual child tasks with their code displays
-        testsHtml = '<table class="table table-sm table-bordered mt-2"><thead><tr><th>Task ID</th><th>Test</th><th>Status</th></tr></thead><tbody>';
-        task.childTasks.forEach(child => {
+        testsHtml = '<table class="table table-sm table-bordered mt-2"><thead><tr><th>Seq#</th><th>PON</th><th>Test</th><th>Status</th></tr></thead><tbody>';
+        sortedChildren.forEach(child => {
             const childStatus = child.status || 'unknown';
             const statusBadge = `<span class="badge bg-${getStatusBadgeColor(childStatus)}">${escapeHtml(childStatus)}</span>`;
+            const seqDisplay = child.displaySequence != null ? child.displaySequence : '-';
+            const ponDisplay = child.placerOrderNumber ? escapeHtml(child.placerOrderNumber) : '-';
             testsHtml += `
                 <tr>
-                    <td>${escapeHtml(child.id)}</td>
+                    <td>${seqDisplay}</td>
+                    <td><small>${ponDisplay}</small></td>
                     <td>${escapeHtml(child.codeDisplay || 'No test specified')}</td>
                     <td>${statusBadge}</td>
                 </tr>

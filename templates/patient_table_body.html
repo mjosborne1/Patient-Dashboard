@@ -13,6 +13,36 @@
 {% endfor %}
 {% if not patients %}
 <tr>
-    <td colspan="7" class="text-center py-3">No patients found matching your search criteria</td>
+    <td colspan="7" class="text-center py-5">
+        <div class="alert alert-info" role="alert">
+            <h5 class="alert-heading"><i class="fas fa-info-circle"></i> No Patients Found</h5>
+            <p class="mb-2">No patients found matching your search criteria.</p>
+            <hr>
+            <p class="mb-2"><strong>First time using the app?</strong></p>
+            <p class="mb-2">If you're using the default FHIR server and see no data, you may need to configure a different server with patient data.</p>
+            <p class="mb-2">Click the <i class="fas fa-cog"></i> <strong>Settings</strong> icon in the sidebar to configure your FHIR server connection.</p>
+            <details class="mt-3">
+                <summary class="btn btn-sm btn-outline-primary"><i class="fas fa-book"></i> Show HL7 AU Test Server Details</summary>
+                <div class="mt-3 text-start">
+                    <h6><i class="fas fa-server"></i> Sparked AU eRequesting Server</h6>
+                    <dl class="row">
+                        <dt class="col-sm-3">Base URL:</dt>
+                        <dd class="col-sm-9"><code>https://smile.sparked-fhir.com/ereq/fhir/DEFAULT</code></dd>
+                        
+                        <dt class="col-sm-3">Read Access:</dt>
+                        <dd class="col-sm-9">Anonymous (no credentials required)</dd>
+                        
+                        <dt class="col-sm-3">Write Access:</dt>
+                        <dd class="col-sm-9">Basic Authentication required</dd>
+                    </dl>
+                    
+                    <div class="alert alert-secondary mt-3" role="alert">
+                        <small><i class="fas fa-external-link-alt"></i> For complete server details including credentials, visit:
+                        <a href="https://confluence.hl7.org/spaces/HA/pages/403865938/AU+eRequesting+Participant+System+Details+2025-12" target="_blank" class="alert-link">HL7 AU eRequesting Participant Systems</a></small>
+                    </div>
+                </div>
+            </details>
+        </div>
+    </td>
 </tr>
 {% endif %}

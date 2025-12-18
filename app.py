@@ -846,8 +846,9 @@ def get_requesters():
             role_org_id = org_ref.split('/')[-1] if org_ref else ''
             all_org_refs.add(role_org_id)
             
-            if role_org_id != org_id:
-                continue  # Skip roles not belonging to selected org
+            # Include providers that match the selected org OR have no organization association
+            if role_org_id and role_org_id != org_id:
+                continue  # Skip roles that belong to a different org
             
             role_id = resource.get('id')
             

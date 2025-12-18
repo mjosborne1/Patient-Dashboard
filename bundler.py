@@ -612,6 +612,7 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                 "text": "Clinical context"
             },
             "subject": patient_reference,
+            "author": [practitioner_reference] if practitioner_reference else [],
             "date": get_localtime_bne(),
             "content": [{
                 "attachment": {

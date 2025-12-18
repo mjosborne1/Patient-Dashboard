@@ -634,7 +634,7 @@ function removeTest(idx) {
 window.lastTestSearchResults = [];
 
 // Add test on Enter, Tab, or when a dropdown option is picked
-document.getElementById('testName').addEventListener('change', addTestSelection);
+// Note: We handle selection via keydown (Enter/Tab) and click handlers, not via 'change' event
 document.getElementById('testName').addEventListener('keydown', function(e) {
     const dropdown = document.getElementById('testNameDropdown');
     const testInput = document.getElementById('testName');
@@ -643,58 +643,71 @@ document.getElementById('testName').addEventListener('keydown', function(e) {
         e.preventDefault();
         const options = dropdown.querySelectorAll('.test-option');
         
-        // Only use visible dropdown options if we triggered a search for the current input
-        // Otherwise, always trigger a fresh search to get latest results
-        if (options.length > 0) {
+        // If dropdown is visible and has options, select from it
+        if (options.length > 0 && dropdown.style.display !== 'none' && dropdown.classList.contains('show')) {
             const highlighted = dropdown.querySelector('.test-option.highlighted');
             if (highlighted) {
-                // Get data from highlighted option and call addSpecificTestSelection directly
+                // Use the highlighted option (user navigated with arrow keys)
                 const code = highlighted.getAttribute('data-code');
                 const display = highlighted.getAttribute('data-display');
                 if (display) {
+                    console.log('[Enter] Selecting highlighted option:', display);
                     addSpecificTestSelection(code, display);
                     testInput.value = '';
                     hideTestDropdown();
                 }
-                return;
-            } else if (dropdown.style.display !== 'none' && testInput.value.trim()) {
-                // Dropdown is visible with options - check if it's for the current input
-                // by comparing against cache. If cache matches current input, use it
-                const matchFound = window.lastTestSearchResults && window.lastTestSearchResults.some(t => 
-                    t.display && t.display.toLowerCase().includes(testInput.value.trim().toLowerCase())
-                );
-                if (matchFound) {
-                    // Cache has results for current input, get data from first option directly
-                    const firstOption = options[0];
-                    const code = firstOption.getAttribute('data-code');
-                    const display = firstOption.getAttribute('data-display');
-                    if (display) {
-                        addSpecificTestSelection(code, display);
-                        testInput.value = '';
-                        hideTestDropdown();
-                    }
-                    return;
+            } else {
+                // No highlighted option - select the first option in the dropdown
+                const firstOption = options[0];
+                const code = firstOption.getAttribute('data-code');
+                const display = firstOption.getAttribute('data-display');
+                if (display) {
+                    console.log('[Enter] Selecting first option from dropdown:', display);
+                    addSpecificTestSelection(code, display);
+                    testInput.value = '';
+                    hideTestDropdown();
                 }
             }
+            return;
         }
         
-        // No matching dropdown options - trigger fresh search and wait
+        // No visible dropdown - trigger fresh search and wait
         if (testInput.value.trim()) {
+            console.log('[Enter] No visible dropdown, triggering search');
             triggerTestSearchAndWait().then(() => {
-                setTimeout(addTestSelection, 50);
+                // After search completes, select first option if dropdown appears
+                setTimeout(() => {
+                    const newOptions = dropdown.querySelectorAll('.test-option');
+                    if (newOptions.length > 0) {
+                        const firstOption = newOptions[0];
+                        const code = firstOption.getAttribute('data-code');
+                        const display = firstOption.getAttribute('data-display');
+                        if (display) {
+                            console.log('[Enter after search] Selecting first option:', display);
+                            addSpecificTestSelection(code, display);
+                            testInput.value = '';
+                            hideTestDropdown();
+                        }
+                    }
+                }, 100);
             });
-        } else {
-            setTimeout(addTestSelection, 10);
         }
     } else if (e.key === 'Tab') {
-        // Trigger fresh search for Tab key
-        if (testInput.value.trim()) {
-            triggerTestSearchAndWait().then(() => {
-                setTimeout(addTestSelection, 50);
-            });
-        } else {
-            setTimeout(addTestSelection, 10);
+        // If dropdown is visible with options, select first option
+        const options = dropdown.querySelectorAll('.test-option');
+        if (options.length > 0 && dropdown.style.display !== 'none' && dropdown.classList.contains('show')) {
+            const firstOption = options[0];
+            const code = firstOption.getAttribute('data-code');
+            const display = firstOption.getAttribute('data-display');
+            if (display) {
+                e.preventDefault(); // Prevent tab navigation
+                console.log('[Tab] Selecting first option:', display);
+                addSpecificTestSelection(code, display);
+                testInput.value = '';
+                hideTestDropdown();
+            }
         }
+        // If no visible options, just let tab work normally
         hideTestDropdown();
     } else if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -822,42 +835,6 @@ document.body.addEventListener('htmx:afterRequest', function(evt) {
                 // Attach targeted click handlers to the dropdown
                 attachTestOptionClickHandlers();
                 
-                // Add direct onclick handlers to each option for maximum compatibility  
-                const directTestOptions = dropdown.querySelectorAll('.test-option');
-                directTestOptions.forEach((option) => {
-                    // Remove any existing handlers first
-                    option.onclick = null;
-                    option.removeAttribute('onclick');
-                    
-                    // Add multiple event types for maximum compatibility
-                    ['click', 'mousedown', 'touchstart'].forEach(eventType => {
-                        option.addEventListener(eventType, function(e) {
-                            // Only process click and touchstart for actual selection
-                            if (eventType === 'click' || eventType === 'touchstart') {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                e.stopImmediatePropagation();
-                                
-                                const display = this.getAttribute('data-display');
-                                const code = this.getAttribute('data-code');
-                                
-                                if (display) {
-                                    addSpecificTestSelection(code, display);
-                                    
-                                    // Clear input and hide dropdown
-                                    const testNameInput = document.getElementById('testName');
-                                    if (testNameInput) {
-                                        testNameInput.value = '';
-                                    }
-                                    hideTestDropdown();
-                                }
-                                
-                                return false;
-                            }
-                        }, true); // Use capture phase
-                    });
-                });
-                
                 // Hide results count after 3 seconds
                 setTimeout(() => {
                     resultsDiv.style.display = 'none';
@@ -905,9 +882,15 @@ function attachTestOptionClickHandlers() {
     
     // Remove any existing click handler on the dropdown
     dropdown.onclick = null;
+    
+    // Remove all existing event listeners by cloning and replacing the dropdown
+    // This ensures we don't accumulate multiple click handlers
+    const newDropdown = dropdown.cloneNode(true);
+    dropdown.parentNode.replaceChild(newDropdown, dropdown);
+    const freshDropdown = document.getElementById('testNameDropdown');
 
     // Use event delegation on the dropdown container
-    dropdown.addEventListener('click', function(e) {
+    freshDropdown.addEventListener('click', function(e) {
         // Find the closest test-option element (in case user clicked on inner elements)
         const testOption = e.target.closest('.test-option');
         

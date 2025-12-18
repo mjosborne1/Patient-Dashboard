@@ -1461,6 +1461,7 @@ function removeCopyToPractitioner(idx) {
 
 // Show and load provider organisations based on Request Category
 function updateProviderDropdown() {
+    console.log('[DEBUG] updateProviderDropdown called');
     const pathologyRadio = document.getElementById('pathologyRequest');
     const radiologyRadio = document.getElementById('radiologyRequest');
     const orgList = document.getElementById('organisationList');
@@ -1468,16 +1469,20 @@ function updateProviderDropdown() {
     const specimenCheckboxSection = document.getElementById('specimenCheckboxSection');
     let snomedCode = null;
 
-    if (pathologyRadio.checked) {
+    console.log('[DEBUG] Radio states - Pathology:', pathologyRadio?.checked, 'Radiology:', radiologyRadio?.checked);
+
+    if (pathologyRadio && pathologyRadio.checked) {
         snomedCode = '310074003';
+        console.log('[DEBUG] Pathology selected, using SNOMED code:', snomedCode);
         // Show specimen checkbox section for pathology
         if (specimenCheckboxSection) {
             specimenCheckboxSection.style.display = 'block';
         }
         // Update specimen section visibility based on checkbox
         updateSpecimenSectionVisibility();
-    } else if (radiologyRadio.checked) {
+    } else if (radiologyRadio && radiologyRadio.checked) {
         snomedCode = '708175003';
+        console.log('[DEBUG] Radiology selected, using SNOMED code:', snomedCode);
         // Hide specimen sections for radiology
         if (specimenCheckboxSection) {
             specimenCheckboxSection.style.display = 'none';
@@ -1485,13 +1490,37 @@ function updateProviderDropdown() {
         if (specimenSection) {
             specimenSection.style.display = 'none';
         }
+    } else {
+        console.log('[DEBUG] No request category selected');
     }
 
     if (snomedCode) {
         // Load organisations for the selected SNOMED code
-        htmx.ajax('GET', `/fhir/Provider/${snomedCode}`, '#providerDropdownContainer');
+        const url = `/fhir/Provider/${snomedCode}`;
+        console.log('[DEBUG] Making HTMX request to:', url);
+        console.log('[DEBUG] Target container:', document.getElementById('providerDropdownContainer'));
+        
+        htmx.ajax('GET', url, {
+            target: '#providerDropdownContainer',
+            swap: 'innerHTML'
+        }).then(() => {
+            console.log('[DEBUG] HTMX request completed');
+            const updatedOrgList = document.getElementById('organisationList');
+            if (updatedOrgList) {
+                console.log('[DEBUG] Organisation list updated, options count:', updatedOrgList.options.length);
+            } else {
+                console.error('[DEBUG] Organisation list not found after HTMX update!');
+            }
+        }).catch((error) => {
+            console.error('[DEBUG] HTMX request failed:', error);
+        });
     } else {
-        orgList.innerHTML = '<option value="">Select an provider...</option>';
+        if (orgList) {
+            orgList.innerHTML = '<option value="">Select a provider...</option>';
+            console.log('[DEBUG] Reset organisation list to default');
+        } else {
+            console.error('[DEBUG] Organisation list element not found!');
+        }
     }
 }
 
@@ -1513,11 +1542,63 @@ function updateSpecimenSectionVisibility() {
 }
 
 // Attach event listeners to Request Category radios
-document.getElementById('pathologyRequest').addEventListener('change', updateProviderDropdown);
-document.getElementById('radiologyRequest').addEventListener('change', updateProviderDropdown);
+console.log('[DEBUG] Attaching event listeners to radio buttons');
+const pathologyRadioElement = document.getElementById('pathologyRequest');
+const radiologyRadioElement = document.getElementById('radiologyRequest');
+const specimenCollectedElement = document.getElementById('specimenCollected');
+
+if (pathologyRadioElement) {
+    pathologyRadioElement.addEventListener('change', function() {
+        console.log('[DEBUG] Pathology radio changed');
+        updateProviderDropdown();
+    });
+} else {
+    console.error('[DEBUG] Pathology radio button not found!');
+}
+
+if (radiologyRadioElement) {
+    radiologyRadioElement.addEventListener('change', function() {
+        console.log('[DEBUG] Radiology radio changed');
+        updateProviderDropdown();
+    });
+} else {
+    console.error('[DEBUG] Radiology radio button not found!');
+}
 
 // Attach event listener to specimen collection checkbox
-document.getElementById('specimenCollected').addEventListener('change', updateSpecimenSectionVisibility);
+if (specimenCollectedElement) {
+    specimenCollectedElement.addEventListener('change', updateSpecimenSectionVisibility);
+} else {
+    console.error('[DEBUG] Specimen collected checkbox not found!');
+}
+
+// Add HTMX event listeners for debugging provider dropdown updates
+document.body.addEventListener('htmx:beforeRequest', function(evt) {
+    if (evt.detail.path && evt.detail.path.includes('/fhir/Provider/')) {
+        console.log('[DEBUG] HTMX beforeRequest for Provider:', evt.detail);
+    }
+});
+
+document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.pathInfo && evt.detail.pathInfo.requestPath && evt.detail.pathInfo.requestPath.includes('/fhir/Provider/')) {
+        console.log('[DEBUG] HTMX afterSwap for Provider:', evt.detail);
+        const orgList = document.getElementById('organisationList');
+        if (orgList) {
+            console.log('[DEBUG] After swap - organisation dropdown has', orgList.options.length, 'options');
+            if (orgList.options.length === 0) {
+                console.error('[DEBUG] WARNING: Organisation dropdown is empty after swap!');
+            }
+        } else {
+            console.error('[DEBUG] ERROR: Organisation list not found after swap!');
+        }
+    }
+});
+
+document.body.addEventListener('htmx:responseError', function(evt) {
+    if (evt.detail.pathInfo && evt.detail.pathInfo.requestPath && evt.detail.pathInfo.requestPath.includes('/fhir/Provider/')) {
+        console.error('[DEBUG] HTMX responseError for Provider:', evt.detail);
+    }
+});
 
 // Attach event listeners to requestingContext radios
 document.querySelectorAll('input[name="requestingContext"]').forEach(radio => {

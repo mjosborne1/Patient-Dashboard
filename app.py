@@ -973,23 +973,43 @@ def get_organisation_by_type(org_type):
     Returns a dropdown list of Organisations matching the given type code.
     org_type: The SCT code for the organisation type (e.g., "310074003" for Pathology service provider)
     Uses SNOMED CT as the type system.
+    
+    DEBUG: This endpoint has comprehensive logging to troubleshoot dropdown population issues:
+    - Logs the org_type parameter received
+    - Logs the FHIR search URL being used
+    - Logs the response status from the FHIR server
+    - Logs the number of entries found
+    - Logs each organisation being added
+    - Logs the final count being returned
+    Check Flask logs if the dropdown doesn't populate.
     """
+    logging.info(f"get_organisation_by_type called with org_type={org_type}")
+    
     # Use SNOMED CT system for organisation type
     system = request.args.get('system', 'http://snomed.info/sct')
     # Search for organisations with the given type code and system
     search_url = f"/Organization?type={system}|{org_type}&_count=20"
+    logging.info(f"Searching for organisations: {search_url}")
+    
     response = fhir_get(search_url, fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials(), timeout=10)
+    logging.info(f"Organisation search response status: {response.status_code}")
+    
     if response.status_code != 200:
+        logging.warning(f"Failed to fetch organisations. Status: {response.status_code}, Response: {response.text[:200]}")
         return render_template('partials/organisations.html', organisations=[])
 
     bundle = response.json()
     entries = bundle.get('entry', [])
+    logging.info(f"Found {len(entries)} organisation entries from FHIR server")
+    
     organisations = []
     # For testing SNP orders on pyro server
     snp_pathology = { "id": "05030000-ac10-0242-f1b3-08dde8e839a8", "name": "Sullivan Nicolaides Pathology" }    
     qxr_radiology = { "id": "05030000-ac10-0242-030b-08dde9b69fcf", "name": "Queensland X-Ray" } 
     organisations.append(snp_pathology)
     organisations.append(qxr_radiology)
+    logging.info("Added 2 hardcoded test organisations (SNP, QXR)")
+    
     for entry in entries:
         resource = entry.get('resource', {})
         org_id = resource.get('id', '')
@@ -998,9 +1018,12 @@ def get_organisation_by_type(org_type):
             "id": org_id,
             "name": name
         })
+        logging.debug(f"Added organisation: {name} (ID: {org_id})")
 
     # Render a partial dropdown list
-    return render_template('partials/organisations.html', organisations=sorted(organisations,  key=lambda x: x["name"]))
+    sorted_orgs = sorted(organisations, key=lambda x: x["name"])
+    logging.info(f"Returning {len(sorted_orgs)} total organisations for dropdown")
+    return render_template('partials/organisations.html', organisations=sorted_orgs)
 
 
 @app.route('/fhir/LabResults/<patient_id>')

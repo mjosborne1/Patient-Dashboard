@@ -6,4 +6,11 @@
       <option value="{{ org.id }}">{{ org.name }}</option>
     {% endfor %}
   </select>
+  <!-- Debug info (hidden) -->
+  <small class="text-muted d-none" data-org-count="{{ organisations|length }}">
+    Loaded {{ organisations|length }} organisations
+  </small>
 </div>
+<script>
+  console.log('[DEBUG] organisations.html partial rendered with {{ organisations|length }} organisations');
+</script>

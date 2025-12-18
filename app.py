@@ -431,17 +431,6 @@ def get_patients():
                 bundle = response.json()
                 all_patients = bundle.get('entry', [])
                 bundle_total = bundle.get('total', None)
-            elif response.status_code == 401:
-                # Authentication failure - return empty results instead of error
-                logging.warning(f"Authentication failed for FHIR server: {response.text}")
-                return render_template('patients.html', 
-                                     patients=[],
-                                     current_page=1,
-                                     total_pages=1,
-                                     total_items=0,
-                                     per_page=per_page,
-                                     has_next=False,
-                                     has_prev=False)
                 
                 # If we fetched extra records for client-side pagination, slice them
                 # Only do client-side pagination if we're not using FHIR link-based pagination
@@ -525,6 +514,17 @@ def get_patients():
                                          per_page=per_page,
                                          has_next=has_next,
                                          has_prev=has_prev)
+            elif response.status_code == 401:
+                # Authentication failure - return empty results instead of error
+                logging.warning(f"Authentication failed for FHIR server: {response.text}")
+                return render_template('patients.html', 
+                                     patients=[],
+                                     current_page=1,
+                                     total_pages=1,
+                                     total_items=0,
+                                     per_page=per_page,
+                                     has_next=False,
+                                     has_prev=False)
             else:
                 logging.error(f"FHIR request failed with status: {response.status_code}, response: {response.text}")
                 return jsonify({"error": "Failed to fetch patients"}), 500

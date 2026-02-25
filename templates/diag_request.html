@@ -948,36 +948,39 @@ function attachTestOptionClickHandlers() {
     }, true); // Use capture phase
 }
 
-// Add CSS for highlighted dropdown items
-const style = document.createElement('style');
-style.textContent = `
-    .test-option.highlighted,
-    .reason-option.highlighted {
-        background-color: #e9ecef !important;
-        color: #495057 !important;
-    }
-    .test-option:hover,
-    .reason-option:hover {
-        background-color: #f8f9fa !important;
-    }
-    #testNameDropdown,
-    #reasonDropdown {
-        border: 1px solid #ced4da;
-        border-radius: 0.375rem;
-        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-    }
-    /* Hide browser's default search clear button */
-    #reason::-webkit-search-cancel-button,
-    #testName::-webkit-search-cancel-button {
-        -webkit-appearance: none;
-        appearance: none;
-    }
-    #reason::-ms-clear,
-    #testName::-ms-clear {
-        display: none;
-    }
-`;
-document.head.appendChild(style);
+// Add CSS for highlighted dropdown items (only if not already added)
+if (!document.getElementById('diag-request-styles')) {
+    const style = document.createElement('style');
+    style.id = 'diag-request-styles';
+    style.textContent = `
+        .test-option.highlighted,
+        .reason-option.highlighted {
+            background-color: #e9ecef !important;
+            color: #495057 !important;
+        }
+        .test-option:hover,
+        .reason-option:hover {
+            background-color: #f8f9fa !important;
+        }
+        #testNameDropdown,
+        #reasonDropdown {
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        }
+        /* Hide browser's default search clear button */
+        #reason::-webkit-search-cancel-button,
+        #testName::-webkit-search-cancel-button {
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        #reason::-ms-clear,
+        #testName::-ms-clear {
+            display: none;
+        }
+    `;
+    document.head.appendChild(style);
+}
 
 // Hide dropdown when pressing Escape
 document.addEventListener('keydown', function(e) {
@@ -1543,11 +1546,13 @@ function updateSpecimenSectionVisibility() {
 
 // Attach event listeners to Request Category radios
 console.log('[DEBUG] Attaching event listeners to radio buttons');
-const pathologyRadioElement = document.getElementById('pathologyRequest');
-const radiologyRadioElement = document.getElementById('radiologyRequest');
-const specimenCollectedElement = document.getElementById('specimenCollected');
+var pathologyRadioElement = document.getElementById('pathologyRequest');
+var radiologyRadioElement = document.getElementById('radiologyRequest');
+var specimenCollectedElement = document.getElementById('specimenCollected');
 
 if (pathologyRadioElement) {
+    // Remove existing listener if any to prevent duplicates
+    pathologyRadioElement.removeEventListener('change', updateProviderDropdown);
     pathologyRadioElement.addEventListener('change', function() {
         console.log('[DEBUG] Pathology radio changed');
         updateProviderDropdown();
@@ -1557,6 +1562,8 @@ if (pathologyRadioElement) {
 }
 
 if (radiologyRadioElement) {
+    // Remove existing listener if any to prevent duplicates
+    radiologyRadioElement.removeEventListener('change', updateProviderDropdown);
     radiologyRadioElement.addEventListener('change', function() {
         console.log('[DEBUG] Radiology radio changed');
         updateProviderDropdown();
@@ -1567,6 +1574,8 @@ if (radiologyRadioElement) {
 
 // Attach event listener to specimen collection checkbox
 if (specimenCollectedElement) {
+    // Remove existing listener if any to prevent duplicates
+    specimenCollectedElement.removeEventListener('change', updateSpecimenSectionVisibility);
     specimenCollectedElement.addEventListener('change', updateSpecimenSectionVisibility);
 } else {
     console.error('[DEBUG] Specimen collected checkbox not found!');

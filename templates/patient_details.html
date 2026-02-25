@@ -133,7 +133,14 @@
                     </div>
                 </div>
             </div>
-            <button type="submit" class="btn btn-primary">Copy to Clipboard</button>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-copy me-1"></i> Copy to Clipboard
+                </button>
+                <button type="button" class="btn btn-success" onclick="saveJsonToFile()">
+                    <i class="fas fa-download me-1"></i> Save to File
+                </button>
+            </div>
             </form>   
         </div>
     </div>
@@ -300,6 +307,36 @@
             console.log(jsonDataDiv.textContent);        
         }
     });
+    
+    // Save JSON to file
+    function saveJsonToFile() {
+        const jsonData = document.getElementById('jsonData').value;
+        if (!jsonData || jsonData.trim() === '') {
+            alert('No JSON data to save. Please generate a patient summary or diagnostic request first.');
+            return;
+        }
+        
+        // Create a blob from the JSON data
+        const blob = new Blob([jsonData], { type: 'application/json' });
+        
+        // Create a temporary download link
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        
+        // Generate filename with patient ID and timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const patientId = '{{ patient.id }}';
+        link.download = `patient-${patientId}-bundle-${timestamp}.json`;
+        
+        // Trigger download
+        document.body.appendChild(link);
+        link.click();
+        
+        // Cleanup
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
     
     // Load all patient data when Show Patient Summary is clicked
     function loadAllPatientData(patientId) {

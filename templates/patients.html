@@ -134,10 +134,10 @@
 
 <script>
 // Initialize pagination state
-let currentPage = 1;
-let totalPages = 1;
-let totalItems = 0;
-let itemsPerPage = 10;
+var currentPage = 1;
+var totalPages = 1;
+var totalItems = 0;
+var itemsPerPage = 10;
 
 // Function to trigger previous page
 function previousPage() {
@@ -270,6 +270,17 @@ function loadPage(page) {
 
 // Update pagination controls based on current state
 function updatePaginationControls(page, total, totalCount, perPage) {
+    // Check if pagination elements exist (we might not be on patients page)
+    const pageNumberEl = document.getElementById('current-page-number');
+    const paginationInfoEl = document.getElementById('pagination-info-text');
+    const prevButton = document.getElementById('prev-page');
+    const nextButton = document.getElementById('next-page');
+    
+    if (!pageNumberEl || !paginationInfoEl || !prevButton || !nextButton) {
+        console.log('Pagination controls not found - skipping update');
+        return;
+    }
+    
     currentPage = page || 1;
     totalPages = Math.max(1, total || 1);
     totalItems = totalCount || 0;
@@ -278,34 +289,32 @@ function updatePaginationControls(page, total, totalCount, perPage) {
     console.log('Updating pagination:', {currentPage, totalPages, totalItems, itemsPerPage});
     
     // Update page number display
-    document.getElementById('current-page-number').textContent = currentPage;
+    pageNumberEl.textContent = currentPage;
     
     // Update info text
     const startItem = totalItems > 0 ? ((currentPage - 1) * itemsPerPage) + 1 : 0;
     const endItem = Math.min(currentPage * itemsPerPage, totalItems);
-    document.getElementById('pagination-info-text').textContent = 
+    paginationInfoEl.textContent = 
         `Showing ${startItem}-${endItem} of ${totalItems} patients`;
     
     // Enable/disable previous button
-    const prevButton = document.getElementById('prev-page');
     const prevButtonElement = prevButton.querySelector('button');
     if (currentPage <= 1 || totalItems === 0) {
         prevButton.classList.add('disabled');
-        prevButtonElement.disabled = true;
+        if (prevButtonElement) prevButtonElement.disabled = true;
     } else {
         prevButton.classList.remove('disabled');
-        prevButtonElement.disabled = false;
+        if (prevButtonElement) prevButtonElement.disabled = false;
     }
     
     // Enable/disable next button
-    const nextButton = document.getElementById('next-page');
     const nextButtonElement = nextButton.querySelector('button');
     if (currentPage >= totalPages || totalPages <= 1 || totalItems === 0) {
         nextButton.classList.add('disabled');
-        nextButtonElement.disabled = true;
+        if (nextButtonElement) nextButtonElement.disabled = true;
     } else {
         nextButton.classList.remove('disabled');
-        nextButtonElement.disabled = false;
+        if (nextButtonElement) nextButtonElement.disabled = false;
     }
 }
 
@@ -345,23 +354,24 @@ document.body.addEventListener('htmx:afterRequest', function(evt) {
 // Function to initialize pagination from data attributes
 function initializePaginationFromDataAttributes() {
     const paginationNav = document.getElementById('pagination-nav');
-    if (paginationNav) {
-        const serverCurrentPage = parseInt(paginationNav.dataset.currentPage) || 1;
-        const serverTotalPages = parseInt(paginationNav.dataset.totalPages) || 1;
-        const serverTotalItems = parseInt(paginationNav.dataset.totalItems) || 0;
-        const serverPerPage = parseInt(paginationNav.dataset.perPage) || 10;
-        
-        console.log('Reading from data attributes:', {
-            serverCurrentPage,
-            serverTotalPages, 
-            serverTotalItems,
-            serverPerPage
-        });
-        
-        updatePaginationControls(serverCurrentPage, serverTotalPages, serverTotalItems, serverPerPage);
-    } else {
-        console.log('Pagination nav element not found');
+    if (!paginationNav) {
+        console.log('Pagination nav element not found - not on patients page');
+        return;
     }
+    
+    const serverCurrentPage = parseInt(paginationNav.dataset.currentPage) || 1;
+    const serverTotalPages = parseInt(paginationNav.dataset.totalPages) || 1;
+    const serverTotalItems = parseInt(paginationNav.dataset.totalItems) || 0;
+    const serverPerPage = parseInt(paginationNav.dataset.perPage) || 10;
+    
+    console.log('Reading from data attributes:', {
+        serverCurrentPage,
+        serverTotalPages, 
+        serverTotalItems,
+        serverPerPage
+    });
+    
+    updatePaginationControls(serverCurrentPage, serverTotalPages, serverTotalItems, serverPerPage);
 }
 
 // Listen for search input changes to reset pagination

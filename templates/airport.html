@@ -133,6 +133,7 @@
 let currentOrganisation = null;
 let currentOffset = 0;
 let currentTasks = {};
+let currentDetailTaskId = null;
 let allOrganisations = []; // Store all organisations for filtering
 const pageSize = 20;
 
@@ -383,8 +384,11 @@ function clearTasksDisplay() {
 }
 
 function loadTasks() {
+        const callTimestamp = Date.now();
+        console.log(`[DEBUG ${callTimestamp}] loadTasks() called`);
+    
     if (!currentOrganisation) {
-        console.warn('No organisation selected');
+        console.warn(`[DEBUG ${callTimestamp}] No organisation selected`);
         return;
     }
     
@@ -401,8 +405,8 @@ function loadTasks() {
     
     const url = `/api/tasks/by-org?org_identifier=${encodeURIComponent(currentOrganisation.identifier)}&offset=${currentOffset}&limit=${pageSize}`;
     
-    console.log('Loading tasks from:', url);
-    console.log('Current organisation:', currentOrganisation);
+    console.log(`[DEBUG ${callTimestamp}] Loading tasks from:`, url);
+    console.log(`[DEBUG ${callTimestamp}] Current organisation:`, currentOrganisation);
     
     fetch(url, {
         headers: getFhirHeaders()
@@ -419,7 +423,9 @@ function loadTasks() {
         })
         .then(data => {
             loader.style.display = 'none';
-            console.log('Tasks response:', data);
+            console.log(`[DEBUG ${callTimestamp}] Tasks response:`, data);
+            console.log(`[DEBUG ${callTimestamp}] Request context:`, currentRequestContext);
+            console.log(`[DEBUG ${callTimestamp}] Selected organisation:`, currentOrganisation);
             
             if (data.error) {
                 const errorMsg = data.details ? `${data.error}: ${data.details}` : data.error;
@@ -433,6 +439,11 @@ function loadTasks() {
             const groupTasks = data.groupTasks || [];
             currentTasks = {};
             const totalCount = data.totalCount || 0;
+            
+            console.log(`[DEBUG ${callTimestamp}] Processing groupTasks count:`, groupTasks.length);
+            if (groupTasks.length > 0) {
+                console.log(`[DEBUG ${callTimestamp}] Sample groupTask:`, groupTasks[0]);
+            }
             
             if (tasks.length === 0 && groupTasks.length === 0) {
                 container.innerHTML = '<div class="alert alert-info m-3">No requested tasks found for this organisation.</div>';
@@ -507,17 +518,20 @@ function loadTasks() {
             });
             
             // Add group tasks
-            groupTasks.forEach(task => {
-                currentTasks[task.id] = task;
-                const dob = task.patient_dob ? ` (DOB: ${task.patient_dob})` : '';
-                const serviceRequestDisplay = task.serviceRequest?.placer_group_number ? escapeHtml(task.serviceRequest.placer_group_number) : escapeHtml(task.description);
-                const statusBadgeClass = getStatusBadgeClass(task.status);
-                const statusDisplay = task.status ? task.status.charAt(0).toUpperCase() + task.status.slice(1) : 'Unknown';
-                const statusOptions = getStatusTransitionOptions(task.status);
-                const businessStatusOptions = getBusinessStatusOptions(task.status, currentRequestContext);
-                const currentBusinessStatus = task.businessStatus || '';
-                const businessStatusDisplay = currentBusinessStatus ? currentBusinessStatus.charAt(0).toUpperCase() + currentBusinessStatus.slice(1).replace('-', ' ') : '';
-                html += `
+            console.log(`[DEBUG ${callTimestamp}] Building HTML for`, groupTasks.length, 'group tasks');
+            try {
+                groupTasks.forEach((task, index) => {
+                    console.log(`[DEBUG ${callTimestamp}] Processing group task ${index + 1}/${groupTasks.length}:`, task.id);
+                    currentTasks[task.id] = task;
+                    const dob = task.patient_dob ? ` (DOB: ${task.patient_dob})` : '';
+                    const serviceRequestDisplay = task.serviceRequest?.placer_group_number ? escapeHtml(task.serviceRequest.placer_group_number) : escapeHtml(task.description);
+                    const statusBadgeClass = getStatusBadgeClass(task.status);
+                    const statusDisplay = task.status ? task.status.charAt(0).toUpperCase() + task.status.slice(1) : 'Unknown';
+                    const statusOptions = getStatusTransitionOptions(task.status);
+                    const businessStatusOptions = getBusinessStatusOptions(task.status, currentRequestContext);
+                    const currentBusinessStatus = task.businessStatus || '';
+                    const businessStatusDisplay = currentBusinessStatus ? currentBusinessStatus.charAt(0).toUpperCase() + currentBusinessStatus.slice(1).replace('-', ' ') : '';
+                    html += `
                     <tr class="table-primary">
                         <td><strong>${escapeHtml(task.patient_name)}${dob}</strong></td>
                         <td>${getFirstIdentifier(task.patient_identifiers)}</td>
@@ -546,8 +560,14 @@ function loadTasks() {
                             </button>
                         </td>
                     </tr>
-                `;
-            });
+                    `;
+                });
+                console.log(`[DEBUG ${callTimestamp}] Finished building HTML for group tasks`);
+            } catch (error) {
+                console.error(`[DEBUG ${callTimestamp}] Error building group tasks HTML:`, error);
+                showToast('danger', 'Error', 'Failed to render tasks: ' + error.message);
+                return;
+            }
             
             // Child tasks are not displayed in table - only used for SR code extraction in backend
             // Store them in currentTasks for details panel access if needed
@@ -560,10 +580,28 @@ function loadTasks() {
                 </table>
             `;
             
+            console.log(`[DEBUG ${callTimestamp}] About to update table. GroupTasks count:`, groupTasks.length);
+            console.log(`[DEBUG ${callTimestamp}] Container element exists:`, !!container);
+            console.log(`[DEBUG ${callTimestamp}] Generated HTML length:`, html.length);
+            console.log(`[DEBUG ${callTimestamp}] First 200 chars of HTML:`, html.substring(0, 200));
+            
+            // Update the container
             container.innerHTML = html;
+            console.log(`[DEBUG ${callTimestamp}] Table HTML updated. New innerHTML length:`, container.innerHTML.length);
             
             // Update pagination
             updatePagination(totalCount);
+
+            // Refresh details panel if it is visible
+            const detailsPanel = document.getElementById('detailsPanel');
+            if (detailsPanel && !detailsPanel.classList.contains('d-none')) {
+                if (currentDetailTaskId && currentTasks[currentDetailTaskId]) {
+                    showDetails(currentDetailTaskId);
+                } else {
+                    detailsPanel.classList.add('d-none');
+                    currentDetailTaskId = null;
+                }
+            }
         })
         .catch(error => {
             loader.style.display = 'none';
@@ -730,6 +768,8 @@ function showDetails(taskId) {
     const detailsContent = document.getElementById('detailsContent');
     const task = currentTasks[taskId];
 
+    currentDetailTaskId = taskId;
+
     console.log('showDetails called for taskId:', taskId);
     console.log('Task data:', task);
 
@@ -870,6 +910,7 @@ function showDetails(taskId) {
 
 function closeDetails() {
     document.getElementById('detailsPanel').classList.add('d-none');
+    currentDetailTaskId = null;
 }
 
 function showToast(type, title, message) {

@@ -19,6 +19,10 @@ import logging
 from json import dumps
 import ast
 
+# When True, prefix urn:uuid references with resource type (e.g., "Observation/urn:uuid:...")
+# When False, use plain urn:uuid references (e.g., "urn:uuid:...")
+USE_BROKEN_SMILECDR_MODE = False
+
 def _build_servicerequest_code(test):
     """
     Build the code element for ServiceRequest based on test data.
@@ -666,7 +670,7 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
         
         coverage_id = str(uuid.uuid4())
         coverage_reference = {
-            "reference": f"urn:uuid:{coverage_id}"
+            "reference": f"Coverage/urn:uuid:{coverage_id}" if USE_BROKEN_SMILECDR_MODE else f"urn:uuid:{coverage_id}"
         }
         
         coverage = {
@@ -841,8 +845,9 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
             })
             
             # Create specimen reference for ServiceRequests
+            specimen_ref = f"Specimen/urn:uuid:{specimen_id}" if USE_BROKEN_SMILECDR_MODE else f"urn:uuid:{specimen_id}"
             specimen_references.append({
-                "reference": f"urn:uuid:{specimen_id}",
+                "reference": specimen_ref,
                 "display": f"Specimen: {specimen_type}"
             })
     
@@ -1000,15 +1005,17 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
         
         # Check if pregnancy status should be added
         if pregnancy_obs_id:
+            obs_ref = f"Observation/urn:uuid:{pregnancy_obs_id}" if USE_BROKEN_SMILECDR_MODE else f"urn:uuid:{pregnancy_obs_id}"
             supporting_info.append({
-                "reference": f"Observation/urn:uuid:{pregnancy_obs_id}",
+                "reference": obs_ref,
                 "display": "Pregnancy status"
             })
         
         # Check if clinical context DocumentReference should be added
         if doc_ref_id:
+            doc_ref = f"DocumentReference/urn:uuid:{doc_ref_id}" if USE_BROKEN_SMILECDR_MODE else f"urn:uuid:{doc_ref_id}"
             supporting_info.append({
-                "reference": f"DocumentReference/urn:uuid:{doc_ref_id}",
+                "reference": doc_ref,
                 "display": "Clinical Context"
             })
         
@@ -1063,7 +1070,7 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
             "status": "requested",
             "intent": "order",
             "focus": {
-                "reference": f"urn:uuid:{sr_id}"
+                "reference": f"ServiceRequest/urn:uuid:{sr_id}" if USE_BROKEN_SMILECDR_MODE else f"urn:uuid:{sr_id}"
             },
             "priority" : request_priority,
             "code" : {
@@ -1077,7 +1084,7 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
             "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
             "owner": organization_reference if organization_reference else {"reference": "Organization/unknown"},
             "partOf": [{
-                "reference": f"urn:uuid:{group_task_id}"
+                "reference": f"Task/urn:uuid:{group_task_id}" if USE_BROKEN_SMILECDR_MODE else f"urn:uuid:{group_task_id}"
             }],
             "authoredOn": get_localtime_bne()
         }
@@ -1138,7 +1145,7 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                         }]
                     }],
                     "subject": patient_reference,
-                    "about": [{"reference": f"urn:uuid:{sr['id']}"} for sr in service_requests],
+                    "about": [{"reference": f"ServiceRequest/urn:uuid:{sr['id']}" if USE_BROKEN_SMILECDR_MODE else f"urn:uuid:{sr['id']}"} for sr in service_requests],
                     "requester": practitioner_reference if practitioner_reference else {"reference": "PractitionerRole/unknown"},
                     "recipient": [{
                         "reference": f"PractitionerRole/{recipient_id}"
@@ -1173,10 +1180,11 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
         # Build provision.data array with references to all ServiceRequests
         provision_data = []
         for sr in service_requests:
+            sr_ref = f"ServiceRequest/urn:uuid:{sr['id']}" if USE_BROKEN_SMILECDR_MODE else f"urn:uuid:{sr['id']}"
             provision_data.append({
                 "meaning": "dependents",
                 "reference": {
-                    "reference": f"urn:uuid:{sr['id']}"
+                    "reference": sr_ref
                 }
             })
         

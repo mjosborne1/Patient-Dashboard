@@ -846,8 +846,6 @@ def get_requesters():
     logging.info(f"Built practitioner map with {len(practitioners)} practitioners")
 
     requesters = []
-    # Also collect all org refs for debugging
-    all_org_refs = set()
     for entry in entries:
         resource = entry.get('resource', {})
         if resource.get('resourceType') == 'PractitionerRole':
@@ -855,7 +853,6 @@ def get_requesters():
             org_ref = resource.get('organization', {}).get('reference', '')
             # org_ref is like "Organization/barney-view-private-hospital"
             role_org_id = org_ref.split('/')[-1] if org_ref else ''
-            all_org_refs.add(role_org_id)
             
             # Include providers that match the selected org OR have no organization association
             if role_org_id and role_org_id != org_id:
@@ -887,8 +884,7 @@ def get_requesters():
             }
             requesters.append(requester)
 
-    logging.info(f"Found {len(requesters)} requesters for org {org_id}")
-    logging.info(f"All org refs found in PractitionerRoles: {list(all_org_refs)[:20]}")  # First 20
+    logging.info(f"Found {len(requesters)} requesters for org '{org_id}'")
     # Sort by name
     requesters = sorted(requesters, key=lambda x: x["name"])
     return render_template('partials/requesters.html', requesters=requesters)

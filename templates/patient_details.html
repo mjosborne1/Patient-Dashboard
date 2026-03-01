@@ -140,6 +140,9 @@
                 <button type="button" class="btn btn-success" onclick="saveJsonToFile()">
                     <i class="fas fa-download me-1"></i> Save to File
                 </button>
+                <button type="button" class="btn btn-info" onclick="drawMermaidDiagram()">
+                    <i class="fas fa-project-diagram me-1"></i> Draw Mermaid
+                </button>
             </div>
             </form>   
         </div>
@@ -297,6 +300,15 @@
 
 {% include "diag_request.html" %}
 
+<!-- Mermaid modal is injected into document.body by JS to avoid nesting inside diag_request modal -->
+
+<!-- Load Mermaid.js from CDN -->
+<script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, theme: 'default' });
+    window.mermaid = mermaid;
+</script>
+
 <script>
     // Copy JSON to clipboard on form submit
     document.getElementById('jsonDataForm').addEventListener('submit', function(e) {
@@ -304,7 +316,6 @@
         const jsonDataDiv = document.getElementById('jsonData');
         if (jsonDataDiv) {
             navigator.clipboard.writeText(jsonDataDiv.textContent);
-            console.log(jsonDataDiv.textContent);        
         }
     });
     
@@ -366,6 +377,154 @@
             const immunisationBtn = document.querySelector('button[hx-get="/fhir/Immunisation/' + patientId + '"]');
             if (immunisationBtn) immunisationBtn.click();
         }, 100);
+    }
+    
+    // Inject mermaid modal into document.body at root level on first use
+    function ensureMermaidModal() {
+        if (document.getElementById('mermaidDiagramModal')) return;
+        const modalHtml = `
+        <div class="modal fade" id="mermaidDiagramModal" tabindex="-1" aria-labelledby="mermaidDiagramLabel" aria-hidden="true">
+            <div class="modal-dialog modal-xl" style="width: 90vw; max-width: 90vw; margin: 5vh auto;">
+                <div class="modal-content">
+                    <div class="modal-header bg-info text-white">
+                        <h5 class="modal-title" id="mermaidDiagramLabel">
+                            <i class="fas fa-project-diagram me-2"></i>FHIR Bundle Diagram
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body overflow-auto" style="max-height: 75vh;">
+                        <div id="mermaidContent">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-info" onclick="downloadMermaidSvg()"><i class="fas fa-download me-1"></i>Download SVG</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    function downloadMermaidSvg() {
+        const svgEl = document.querySelector('#mermaidContent svg');
+        if (!svgEl) {
+            alert('No diagram to download yet.');
+            return;
+        }
+        const serializer = new XMLSerializer();
+        const svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n' + serializer.serializeToString(svgEl);
+        const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'fhir-bundle-diagram.svg';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function drawMermaidDiagram() {
+        const textarea = document.getElementById('jsonData');
+        if (!textarea || !textarea.value.trim()) {
+            alert('No bundle data to visualize. Please create a diagnostic request first.');
+            return;
+        }
+        
+        try {
+            // Parse the JSON to validate it
+            const bundle = JSON.parse(textarea.value);
+            
+            // Close the diagnostic request modal if it is open to avoid focus/aria-hidden conflicts
+            const diagnosticModalEl = document.getElementById('createDiagnosticRequestModal');
+            if (diagnosticModalEl) {
+                const diagnosticModal = bootstrap.Modal.getInstance(diagnosticModalEl);
+                if (diagnosticModal) {
+                    diagnosticModal.hide();
+                }
+            }
+
+            ensureMermaidModal();
+            const mermaidModalEl = document.getElementById('mermaidDiagramModal');
+            const mermaidDiv = document.getElementById('mermaidContent');
+            
+            // Show loading state
+            mermaidDiv.innerHTML = '<div class="text-center p-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+            
+            // Send bundle to backend to generate mermaid diagram
+            fetch('/bundle/mermaid', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: textarea.value
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.text();
+            })
+            .then(mermaidText => {
+                // Set up event listener BEFORE showing modal
+                const onShown = () => {
+                    mermaidModalEl.removeEventListener('shown.bs.modal', onShown);
+                    
+                    // Render immediately after modal is shown
+                    (async () => {
+                        try {
+                            if (typeof mermaid === 'undefined') {
+                                throw new Error('Mermaid is not defined');
+                            }
+                            // Use mermaid.render() to generate SVG
+                            const { svg, bindFunctions } = await mermaid.render('mermaidDiagram', mermaidText);
+                            
+                            // Clear the loading spinner
+                            mermaidDiv.innerHTML = '';
+                            
+                            // Create a wrapper div for the SVG
+                            const svgWrapper = document.createElement('div');
+                            svgWrapper.style.width = '100%';
+                            svgWrapper.style.height = '100%';
+                            svgWrapper.innerHTML = svg;
+                            
+                            mermaidDiv.appendChild(svgWrapper);
+                            
+                            // Ensure SVG is responsive
+                            const svgElement = mermaidDiv.querySelector('svg');
+                            if (svgElement) {
+                                svgElement.style.maxWidth = '100%';
+                                svgElement.style.height = 'auto';
+                            }
+                            
+                            if (bindFunctions) bindFunctions(mermaidDiv);
+                        } catch (err) {
+                            console.error('Mermaid rendering error:', err);
+                            mermaidDiv.innerHTML = '<div class="alert alert-danger">Error rendering diagram: ' + err.message + '</div>';
+                        }
+                    })();
+                };
+                
+                mermaidModalEl.addEventListener('shown.bs.modal', onShown);
+                
+                // Show the modal with a small delay to ensure Bootstrap is ready
+                setTimeout(() => {
+                    const mermaidModal = new bootstrap.Modal(mermaidModalEl);
+                    mermaidModal.show();
+                }, 100);
+            })
+            .catch(error => {
+                console.error('Error generating mermaid diagram:', error);
+                mermaidDiv.innerHTML = 
+                    '<div class="alert alert-danger">Error generating diagram: ' + error.message + '</div>';
+            });
+        } catch (e) {
+            alert('Invalid JSON in bundle data: ' + e.message);
+        }
     }
     
 function setJsonData(json) {

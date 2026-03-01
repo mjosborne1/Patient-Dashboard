@@ -8,6 +8,9 @@ import os  # Add os module for environment variables
 from fhirpathpy import evaluate
 from fhirutils import fhir_get, format_fhir_date, get_text_display, find_category, get_form_data
 from bundler import create_request_bundle
+from fhir_parser import extract_resources
+from graph_builder import build_graph
+from mermaid_generator import generate_mermaid
 
 
 app = Flask(__name__)
@@ -1311,6 +1314,38 @@ def create_diagnostic_request_bundle(patient_id):
     bundle = create_request_bundle(form_data=form_data, fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials())
     bundle_json = json.dumps(bundle, indent=2)
     return render_template('partials/json_textarea.html', bundle_json=bundle_json), 200
+
+
+@app.route('/bundle/mermaid', methods=['POST'])
+def generate_bundle_mermaid():
+    """
+    Generate a Mermaid diagram from a FHIR bundle.
+    Accepts JSON bundle in request body.
+    Returns Mermaid diagram text.
+    """
+    try:
+        bundle = request.get_json()
+        if not bundle:
+            return "Error: No bundle provided", 400
+        
+        # Extract resources from bundle
+        resources = extract_resources(bundle)
+        
+        if not resources:
+            return "Error: No resources found in bundle", 400
+        
+        # Build graph from resources
+        graph = build_graph(resources)
+        
+        # Generate mermaid diagram
+        bundle_title = "Diagnostic Request Bundle"
+        mermaid_text = generate_mermaid(graph, bundle_title)
+        
+        return mermaid_text, 200, {'Content-Type': 'text/plain'}
+    
+    except Exception as e:
+        logging.error(f"Error generating mermaid diagram: {str(e)}")
+        return f"Error: {str(e)}", 500
 
 
 @app.route('/fhir/diagvalueset/expand')

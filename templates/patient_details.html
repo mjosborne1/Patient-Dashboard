@@ -126,7 +126,7 @@
             <form id="jsonDataForm" class="mb-3">
             <div class="position-relative mb-2">
                 <label for="jsonData" class="form-label fw-bold">Patient Summary / Diagnostic Request (JSON)</label>
-                <textarea id="jsonData" class="form-control" style="min-height:100px; max-height:400px; overflow-y:auto; background:#f8f9fa;" readonly></textarea>
+                <textarea id="jsonData" class="form-control" style="min-height:100px; max-height:600px; overflow-y:auto; background:#f8f9fa;" readonly></textarea>
                 <div id="jsonData-spinner" class="htmx-indicator position-absolute top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center" style="background:rgba(255,255,255,0.7); z-index:10; display:none;">
                     <div class="spinner-border text-primary" role="status">
                         <span class="visually-hidden">Loading...</span>
@@ -134,13 +134,13 @@
                 </div>
             </div>
             <div class="d-flex gap-2">
-                <button type="submit" class="btn btn-primary">
+                <button type="submit" id="copyToClipboardBtn" class="btn btn-primary" disabled>
                     <i class="fas fa-copy me-1"></i> Copy to Clipboard
                 </button>
-                <button type="button" class="btn btn-success" onclick="saveJsonToFile()">
+                <button type="button" id="saveToFileBtn" class="btn btn-success" onclick="saveJsonToFile()" disabled>
                     <i class="fas fa-download me-1"></i> Save to File
                 </button>
-                <button type="button" class="btn btn-info" onclick="drawMermaidDiagram()">
+                <button type="button" id="drawMermaidBtn" class="btn btn-info" onclick="drawMermaidDiagram()" disabled>
                     <i class="fas fa-project-diagram me-1"></i> Draw Mermaid
                 </button>
             </div>
@@ -530,7 +530,50 @@
 function setJsonData(json) {
     const textarea = document.getElementById('jsonData');
     if (textarea) textarea.value = json;
+    updateJsonActionButtons();
 }
+
+function updateJsonActionButtons() {
+    const textarea = document.getElementById('jsonData');
+    const hasContent = textarea && textarea.value && textarea.value.trim() !== '';
+    
+    const copyBtn = document.getElementById('copyToClipboardBtn');
+    const saveBtn = document.getElementById('saveToFileBtn');
+    const mermaidBtn = document.getElementById('drawMermaidBtn');
+    
+    if (copyBtn) {
+        copyBtn.disabled = !hasContent;
+        copyBtn.style.opacity = hasContent ? '1' : '0.6';
+    }
+    if (saveBtn) {
+        saveBtn.disabled = !hasContent;
+        saveBtn.style.opacity = hasContent ? '1' : '0.6';
+    }
+    if (mermaidBtn) {
+        mermaidBtn.disabled = !hasContent;
+        mermaidBtn.style.opacity = hasContent ? '1' : '0.6';
+    }
+}
+
+// Initialize button states on page load
+document.addEventListener('DOMContentLoaded', function() {
+    updateJsonActionButtons();
+    
+    // Also update when the diagnostic request modal might have updated the content
+    const diagModal = document.getElementById('createDiagnosticRequestModal');
+    if (diagModal) {
+        diagModal.addEventListener('hidden.bs.modal', function() {
+            updateJsonActionButtons();
+        });
+    }
+});
+
+// Update button states after HTMX swaps content into jsonData
+document.body.addEventListener('htmx:afterSwap', function(event) {
+    if (event.detail.target.id === 'jsonData') {
+        updateJsonActionButtons();
+    }
+});
 </script>
 
 <style>

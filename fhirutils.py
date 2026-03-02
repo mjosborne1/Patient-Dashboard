@@ -2,20 +2,30 @@ import os
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
+from typing import Optional, Tuple
 
-def fhir_get(path, fhir_server_url=None, auth_credentials=None, **kwargs):
+# Internal sentinel: distinguishes "caller didn't pass auth" (use env fallback)
+# from "caller explicitly passed None" (force unauthenticated request).
+_UNSET = object()
+
+def fhir_get(path, fhir_server_url=None, auth_credentials=_UNSET, **kwargs):
     """
     Wrapper for requests.get that includes FHIR server BASIC auth.
     path: the endpoint path, e.g. '/Patient?_count=10'
-    fhir_server_url: full base URL for AU Core, e.g. 'https://smile.sparked-fhir.com/aucore/fhir/DEFAULT'
-    auth_credentials: tuple of (username, password) or None
+    fhir_server_url: full base URL, e.g. 'https://smile.sparked-fhir.com/aucore/fhir/DEFAULT'
+    auth_credentials:
+      - omitted / _UNSET  → fall back to FHIR_USERNAME/FHIR_PASSWORD env vars
+      - tuple (user, pass) → use these credentials
+      - None              → explicitly unauthenticated, skip env-var fallback
     """
-    # Use provided auth credentials first, then fall back to environment variables
-    auth = auth_credentials
-    if not auth:
-        FHIR_USERNAME = os.environ.get('FHIR_USERNAME')
-        FHIR_PASSWORD = os.environ.get('FHIR_PASSWORD')
-        auth = (FHIR_USERNAME, FHIR_PASSWORD) if FHIR_USERNAME and FHIR_PASSWORD else None
+    if auth_credentials is _UNSET:
+        # Caller didn't specify — fall back to environment
+        env_user = os.environ.get('FHIR_USERNAME')
+        env_pass = os.environ.get('FHIR_PASSWORD')
+        auth: Optional[Tuple[str, str]] = (env_user, env_pass) if env_user and env_pass else None
+    else:
+        # None → unauthenticated; tuple → use it
+        auth = auth_credentials  # type: ignore[assignment]
     
     base_url = fhir_server_url or os.environ.get('FHIR_SERVER_URL')
     url = ''

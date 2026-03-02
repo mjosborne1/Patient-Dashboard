@@ -63,18 +63,35 @@ def get_fhir_server_url():
     return url
 
 def get_fhir_auth_credentials():
-    # Try to get from custom headers (set by frontend from localStorage), fallback to env vars
+    """Returns (username, password) tuple, or None for unauthenticated requests.
+    Never falls back to .env credentials when the frontend has specified a custom server URL,
+    to avoid leaking credentials to a different server.
+    """
+    # 1. Per-request credentials sent by the frontend from Settings
     username = request.headers.get('X-FHIR-Username')
     password = request.headers.get('X-FHIR-Password')
-    
-    if not username or not password:
-        username = os.environ.get('FHIR_USERNAME')
-        password = os.environ.get('FHIR_PASSWORD')
-    
-    logging.debug(f"Auth check - header username: {request.headers.get('X-FHIR-Username')}, env username: {os.environ.get('FHIR_USERNAME')}")
-    
     if username and password:
+        logging.debug(f"Auth check - using header credentials for user: {username}")
         return (username, password)
+
+    # 2. Frontend specified a custom server but no auth headers → that server
+    #    needs no authentication; do NOT fall back to .env credentials which belong
+    #    to a different server.
+    if request.headers.get('X-FHIR-Server-URL'):
+        logging.debug("Auth check - custom server URL present but no auth headers; unauthenticated")
+        return None
+
+    # 3. No frontend override at all. Only use .env credentials when FHIR_SERVER_URL
+    #    is also in .env (they were configured together for the same server).
+    if not os.environ.get('FHIR_SERVER_URL'):
+        logging.debug("Auth check - no FHIR_SERVER_URL in env; omitting env credentials")
+        return None
+
+    env_username = os.environ.get('FHIR_USERNAME')
+    env_password = os.environ.get('FHIR_PASSWORD')
+    logging.debug(f"Auth check - falling back to env credentials, username: {env_username}")
+    if env_username and env_password:
+        return (env_username, env_password)
     return None
 
 @app.route('/')
@@ -653,18 +670,74 @@ def get_patient(patient_id):
 
 @app.route('/fhir/Patient/<patient_id>/summary', methods=['GET'])
 def get_patient_summary(patient_id):
-    response = fhir_get(
-        f"/Patient/{patient_id}/$summary",
-        fhir_server_url=get_fhir_server_url(),
-        timeout=60
-    )
+    server_url = get_fhir_server_url()
+    api_path = f"/Patient/{patient_id}/$summary"
+    full_url = server_url.rstrip('/') + '/' + api_path.lstrip('/')
+    auth_creds = get_fhir_auth_credentials()
+    print(f"[Patient Summary] Server URL  : {server_url}")
+    print(f"[Patient Summary] Full API call: GET {full_url}")
+    print(f"[Patient Summary] Auth         : {'credentials provided' if auth_creds else 'no auth (unauthenticated)'}")
+    try:
+        response = fhir_get(
+            api_path,
+            fhir_server_url=server_url,
+            auth_credentials=auth_creds,
+            timeout=60
+        )
+    except Exception as exc:
+        print(f"[Patient Summary] EXCEPTION during request: {exc}")
+        error_message = {
+            "error": "Failed to fetch patient summary",
+            "debug": {
+                "server_url": server_url,
+                "api_call": f"GET {full_url}",
+                "exception": str(exc)
+            }
+        }
+        return render_template('partials/json_textarea.html', bundle_json=json.dumps(error_message, indent=2))
+
+    print(f"[Patient Summary] Response status: {response.status_code}")
+
+    # Some servers (e.g. smile) allow unauthenticated access to $summary but reject
+    # requests that include credentials for an account without the required role.
+    # If we get a 401 AND we sent credentials, retry once without them.
+    if response.status_code in (401, 403) and auth_creds is not None:
+        print(f"[Patient Summary] 401 with credentials — retrying unauthenticated")
+        try:
+            response = fhir_get(
+                api_path,
+                fhir_server_url=server_url,
+                auth_credentials=None,
+                timeout=60
+            )
+        except Exception as exc:
+            print(f"[Patient Summary] EXCEPTION on unauthenticated retry: {exc}")
+            error_message = {
+                "error": "Failed to fetch patient summary",
+                "debug": {"server_url": server_url, "api_call": f"GET {full_url}", "exception": str(exc)}
+            }
+            return render_template('partials/json_textarea.html', bundle_json=json.dumps(error_message, indent=2))
+        print(f"[Patient Summary] Retry response status: {response.status_code}")
+
     if response.status_code == 200:
         bundle = response.json()       
         bundle_json = json.dumps(bundle, indent=2)
-        # Render the partial instead of returning raw JSON
         return render_template('partials/json_textarea.html', bundle_json=bundle_json)
     else:
-        error_message = {"error": "Failed to fetch patient summary"}
+        try:
+            response_body = response.json()
+        except Exception:
+            response_body = response.text
+        print(f"[Patient Summary] Error response body: {response_body}")
+        error_message = {
+            "error": "Failed to fetch patient summary",
+            "debug": {
+                "server_url": server_url,
+                "api_call": f"GET {full_url}",
+                "http_status": response.status_code,
+                "response": response_body
+            }
+        }
         return render_template('partials/json_textarea.html', bundle_json=json.dumps(error_message, indent=2))
     
 

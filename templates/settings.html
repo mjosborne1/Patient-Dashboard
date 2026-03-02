@@ -77,21 +77,16 @@ document.getElementById('fhirServerSettingsForm').addEventListener('submit', fun
   location.reload();
 });
 
-// On page load, populate fields from localStorage if available
-document.addEventListener('DOMContentLoaded', function() {
-  if (localStorage.getItem('fhir_server_url')) {
-    document.getElementById('fhirServerUrlInput').value = localStorage.getItem('fhir_server_url');
-  }
+// Populate fields from localStorage each time the modal opens
+document.getElementById('fhirServerModal').addEventListener('show.bs.modal', function() {
+  const savedUrl = localStorage.getItem('fhir_server_url');
+  document.getElementById('fhirServerUrlInput').value = savedUrl || 'https://smile.sparked-fhir.com/aucore/fhir/DEFAULT';
   const useAuth = localStorage.getItem('useFhirAuth') === 'true';
   document.getElementById('useAuthCheckbox').checked = useAuth;
   document.querySelectorAll('.auth-fields').forEach(el => {
     el.style.display = useAuth ? '' : 'none';
   });
-  if (useAuth && localStorage.getItem('fhirUsername')) {
-    document.getElementById('fhirUsernameInput').value = localStorage.getItem('fhirUsername');
-  }
-  if (useAuth && localStorage.getItem('fhirPassword')) {
-    document.getElementById('fhirPasswordInput').value = localStorage.getItem('fhirPassword');
-  }
+  document.getElementById('fhirUsernameInput').value = (useAuth && localStorage.getItem('fhirUsername')) || '';
+  document.getElementById('fhirPasswordInput').value = (useAuth && localStorage.getItem('fhirPassword')) || '';
 });
 </script>

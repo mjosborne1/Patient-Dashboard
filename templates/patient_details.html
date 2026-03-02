@@ -126,7 +126,7 @@
             <form id="jsonDataForm" class="mb-3">
             <div class="position-relative mb-2">
                 <label for="jsonData" class="form-label fw-bold">Patient Summary / Diagnostic Request (JSON)</label>
-                <textarea id="jsonData" class="form-control" style="min-height:100px; background:#f8f9fa;" readonly></textarea>
+                <textarea id="jsonData" class="form-control" style="min-height:100px; max-height:400px; overflow-y:auto; background:#f8f9fa;" readonly></textarea>
                 <div id="jsonData-spinner" class="htmx-indicator position-absolute top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center" style="background:rgba(255,255,255,0.7); z-index:10; display:none;">
                     <div class="spinner-border text-primary" role="status">
                         <span class="visually-hidden">Loading...</span>

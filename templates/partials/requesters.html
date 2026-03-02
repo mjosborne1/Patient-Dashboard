@@ -6,14 +6,29 @@
         hx-swap="outerHTML">
   {% if no_org %}
   <option value="">Select an organisation first...</option>
-  {% elif requesters|length == 0 %}
+  {% elif (attached_requesters | default([]) | length + unattached_requesters | default([]) | length) == 0 %}
   <option value="">No requesters found for this organisation</option>
   {% else %}
   <option value="">Select a requester...</option>
-  {% for requester in requesters %}
-    <option value="{{ requester.id }}">
-      {{ requester.name }}{% if requester.specialty %} ({{ requester.specialty }}){% endif %}
+  {% set attached = attached_requesters | default([]) %}
+  {% set unattached = unattached_requesters | default([]) %}
+  {% if attached | length > 0 %}
+  <optgroup label="✓ Attached to selected organisation ({{ attached | length }})">
+    {% for requester in attached %}
+    <option value="{{ requester.id }}" data-attached="true" style="font-weight: 600;">
+      ★ {{ requester.name }}{% if requester.specialty %} — {{ requester.specialty }}{% endif %}
     </option>
-  {% endfor %}
+    {% endfor %}
+  </optgroup>
+  {% endif %}
+  {% if unattached | length > 0 %}
+  <optgroup label="Other available practitioners ({{ unattached | length }})">
+    {% for requester in unattached %}
+    <option value="{{ requester.id }}" data-attached="false">
+      {{ requester.name }}{% if requester.specialty %} — {{ requester.specialty }}{% endif %}
+    </option>
+    {% endfor %}
+  </optgroup>
+  {% endif %}
   {% endif %}
 </select>

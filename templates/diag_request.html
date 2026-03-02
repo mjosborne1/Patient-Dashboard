@@ -13,7 +13,7 @@
                     hx-trigger="shown.bs.modal from:#createDiagnosticRequestModal"
                     hx-target="#copyToList"
                     hx-swap="outerHTML">
-              <option value="">Select practitioners to copy results to...</option>
+              <option value="">Select practitioners or specialty to copy results to...</option>
               <!-- Options will be loaded here by HTMX -->
             </select>
             <div class="form-text">Hold Ctrl (or Cmd on Mac) to select multiple practitioners</div>
@@ -80,6 +80,23 @@
               <!-- Options will be loaded here by HTMX -->
             </select>
           </div>
+          <!-- Common Order Sets -->
+          <div class="mb-3" id="commonOrderSetsContainer">
+            <label for="commonOrderSet" class="form-label">
+              <i class="fas fa-layer-group"></i> Common Order Sets
+            </label>
+            <div class="d-flex gap-2 align-items-center">
+              <select class="form-select" id="commonOrderSet" onchange="applyOrderSet(this.value)">
+                <option value="">— Select a common order set —</option>
+                <!-- Populated by JS when modal opens -->
+              </select>
+            </div>
+            <div class="form-text" id="orderSetFeedback">
+              <i class="fas fa-info-circle"></i> Select a set to add all its tests at once. You can still add or remove individual tests below.
+            </div>
+          </div>
+
+          <!-- Individual Test Name search -->
           <div class="mb-3">
             <label for="testName" class="form-label">Test Name</label>
             <div class="position-relative">
@@ -394,7 +411,7 @@
                 class="form-control" 
                 id="copyToPractitioner" 
                 name="copyToPractitioner" 
-                placeholder="start typing practitioner name..." 
+                placeholder="start typing practitioner name or specialty..." 
                 autocomplete="off"
                 hx-get="/fhir/CopyToPractitioners"
                 hx-trigger="input changed delay:500ms, keyup[!event.shiftKey && event.key=='Tab'] from:#copyToPractitioner"
@@ -475,6 +492,74 @@ function renderSelectedTests() {
     
     hidden.value = JSON.stringify(window.selectedTests);
 }
+
+// ── Common Order Sets ─────────────────────────────────────────────────────────
+window.orderSetsData = {};
+
+async function loadOrderSets() {
+    try {
+        const resp = await fetch('/fhir/OrderSets');
+        if (!resp.ok) return;
+        window.orderSetsData = await resp.json();
+        const sel = document.getElementById('commonOrderSet');
+        if (!sel) return;
+        // Remove any previously populated options but keep the placeholder
+        while (sel.options.length > 1) sel.remove(1);
+        Object.entries(window.orderSetsData).forEach(([name, tests]) => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            const n = Array.isArray(tests) ? tests.length : 0;
+            opt.textContent = `${name}  (${n} test${n !== 1 ? 's' : ''})`;
+            sel.appendChild(opt);
+        });
+    } catch (e) {
+        console.warn('[OrderSets] Failed to load order sets:', e);
+    }
+}
+
+function applyOrderSet(setName) {
+    if (!setName) return;
+    const tests = window.orderSetsData[setName];
+    if (!Array.isArray(tests)) return;
+
+    let added = 0, skipped = 0;
+    tests.forEach(t => {
+        const code = t.code || '';
+        const display = t.text || t.display || '';
+        if (!display) return;
+        const already = window.selectedTests.find(x =>
+            (typeof x === 'string' ? x : x.display) === display
+        );
+        if (!already) {
+            window.selectedTests.push({
+                code,
+                display,
+                display_sequence: window.selectedTests.length + 1
+            });
+            added++;
+        } else {
+            skipped++;
+        }
+    });
+    renderSelectedTests();
+
+    // Reset dropdown to placeholder
+    const sel = document.getElementById('commonOrderSet');
+    if (sel) sel.value = '';
+
+    // Brief feedback
+    const fb = document.getElementById('orderSetFeedback');
+    if (fb) {
+        const base = `<i class="fas fa-info-circle"></i> Select a set to add all its tests at once. You can still add or remove individual tests below.`;
+        if (added > 0) {
+            fb.innerHTML = `<span class="text-success"><i class="fas fa-check-circle"></i> Added ${added} test${added !== 1 ? 's' : ''} from "${setName}"${skipped > 0 ? ` (${skipped} already selected)` : ''}.</span>`;
+        } else {
+            fb.innerHTML = `<span class="text-warning"><i class="fas fa-exclamation-circle"></i> All tests from "${setName}" are already selected.</span>`;
+        }
+        setTimeout(() => { fb.innerHTML = base; }, 3500);
+    }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Function to add a specific test with known code and display (used when clicking dropdown options)
 function addSpecificTestSelection(code, display) {
@@ -1646,7 +1731,12 @@ document.getElementById('requestStatusOnHold').addEventListener('change', update
 // Reset selectedTests and selectedReasons when the modal is opened
 document.getElementById('createDiagnosticRequestModal').addEventListener('shown.bs.modal', function () {
   // initialise Provider list
-    updateProviderDropdown(); 
+    updateProviderDropdown();
+
+  // Load/refresh common order sets dropdown
+    loadOrderSets();
+    const orderSetSel = document.getElementById('commonOrderSet');
+    if (orderSetSel) orderSetSel.value = '';
 
   // Clear selected tests
     window.selectedTests = [];

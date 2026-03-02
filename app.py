@@ -921,7 +921,8 @@ def get_requesters():
     
     logging.info(f"Built practitioner map with {len(practitioners)} practitioners")
 
-    requesters = []
+    attached_requesters = []
+    unattached_requesters = []
     for entry in entries:
         resource = entry.get('resource', {})
         if resource.get('resourceType') == 'PractitionerRole':
@@ -930,10 +931,11 @@ def get_requesters():
             # org_ref is like "Organization/barney-view-private-hospital"
             role_org_id = org_ref.split('/')[-1] if org_ref else ''
             
-            # Include providers that match the selected org OR have no organization association
+            # Skip roles that are explicitly linked to a *different* organisation
             if role_org_id and role_org_id != org_id:
-                continue  # Skip roles that belong to a different org
+                continue
             
+            is_attached = (role_org_id == org_id)  # True = linked to selected org; False = no org link
             role_id = resource.get('id')
             
             # Get practitioner name
@@ -956,14 +958,20 @@ def get_requesters():
             requester = {
                 "id": role_id,
                 "name": name,
-                "specialty": specialty_display
+                "specialty": specialty_display,
+                "attached": is_attached
             }
-            requesters.append(requester)
+            if is_attached:
+                attached_requesters.append(requester)
+            else:
+                unattached_requesters.append(requester)
 
-    logging.info(f"Found {len(requesters)} requesters for org '{org_id}'")
-    # Sort by name
-    requesters = sorted(requesters, key=lambda x: x["name"])
-    return render_template('partials/requesters.html', requesters=requesters)
+    attached_requesters = sorted(attached_requesters, key=lambda x: x["name"])
+    unattached_requesters = sorted(unattached_requesters, key=lambda x: x["name"])
+    logging.info(f"Found {len(attached_requesters)} attached + {len(unattached_requesters)} unattached requesters for org '{org_id}'")
+    return render_template('partials/requesters.html',
+                           attached_requesters=attached_requesters,
+                           unattached_requesters=unattached_requesters)
     
 
 @app.route('/fhir/CopyToPractitioners')
@@ -1419,6 +1427,28 @@ def generate_bundle_mermaid():
     except Exception as e:
         logging.error(f"Error generating mermaid diagram: {str(e)}")
         return f"Error: {str(e)}", 500
+
+
+@app.route('/fhir/OrderSets')
+@login_required
+def get_order_sets():
+    """
+    Returns the common order sets defined in order_sets/common_orders.json.
+    Returns the 'order_sets' dict keyed by set name, each value being a list of
+    {code, text} objects.
+    """
+    import json as _json
+    order_sets_path = os.path.join(os.path.dirname(__file__), 'order_sets', 'common_orders.json')
+    try:
+        with open(order_sets_path, 'r', encoding='utf-8') as f:
+            data = _json.load(f)
+        return jsonify(data.get('order_sets', {}))
+    except FileNotFoundError:
+        logging.warning(f"order_sets file not found at {order_sets_path}")
+        return jsonify({})
+    except Exception as e:
+        logging.error(f"Error reading order_sets: {e}")
+        return jsonify({}), 500
 
 
 @app.route('/fhir/diagvalueset/expand')

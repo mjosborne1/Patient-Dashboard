@@ -19,6 +19,7 @@ Additional features added in this repo
 - **PatientSummary** $summary bundles to text area for use in IG examples
 - **Diagnostic Requesting** dialog, create an AU eRequesting compliant bundle in the text area
 - **FHIR Bundle Visualisation** – Render any bundle in the text area as an interactive Mermaid SVG diagram, with one-click SVG download
+- **Common Order Sets** – Configure and manage reusable groups of diagnostic tests for quick ordering
 
 ---
 
@@ -66,6 +67,59 @@ POST /bundle/mermaid
        └─ build_graph(resources) # graph_builder.py – detect edges from reference fields
             └─ generate_mermaid(graph) # mermaid_generator.py – emit flowchart LR text
 ```
+
+---
+
+## 📋 Common Order Sets
+
+Configure reusable groups of diagnostic tests to streamline ordering workflows. Access via the **Order Sets** link in the sidebar (above Settings).
+
+### Features
+
+- **Create & Edit** – Define named groups of commonly ordered tests together (e.g., "Male over 50", "Diabetes monitoring")
+- **Persistent Storage** – Order sets are stored in `order_sets/common_orders.json` and persist across sessions
+- **Quick Access** – Saved sets appear in the diagnostic request form for one-click selection
+- **Visual Editor** – Modal interface with drag-free test management using [Vex.js](http://github.hubspot.com/vex/)
+- **CRUD Operations** – Create new sets, edit existing ones, rename, or delete
+
+### How it works
+
+| Component | File | Responsibility |
+|---|---|---|
+| Configuration UI | `templates/order_sets_config.html` | Modal interface for managing order sets |
+| Frontend Logic | `templates/index.html` | JavaScript functions (`osc*`) handle UI state, editing, and persistence |
+| Storage API | `app.py` → `/config/order-sets` | PUT endpoint saves order sets to JSON file |
+| Retrieval API | `app.py` → `/fhir/OrderSets` | GET endpoint returns all saved order sets |
+| Data File | `order_sets/common_orders.json` | JSON structure: `{"order_sets": {"SetName": [{"code": "...", "text": "..."}]}}` |
+| Integration | Diagnostic request form | Loads order sets for quick test selection |
+
+### Usage
+
+1. **Open Configuration** – Click the "Order Sets" icon in the sidebar
+2. **Create New Set** – Click "+ New", enter a name (e.g., "Thyroid Screen")
+3. **Add Tests** – Click "+ Add test" and enter SNOMED codes and display names
+4. **Save** – Click "Save Set" to persist changes
+5. **Edit Existing** – Click any saved set from the list to edit
+6. **Use in Requests** – Saved sets appear in the diagnostic request form for quick selection
+
+### Structure Example
+
+```json
+{
+  "order_sets": {
+    "Male over 50": [
+      {"code": "14743-9", "text": "Prostate specific Ag [Mass/volume] in Serum or Plasma"},
+      {"code": "2093-3", "text": "Cholesterol [Mass/volume] in Serum or Plasma"},
+      {"code": "2339-0", "text": "Glucose [Mass/volume] in Blood"}
+    ],
+    "Diabetes monitoring": [
+      {"code": "4548-4", "text": "Hemoglobin A1c/Hemoglobin.total in Blood"},
+      {"code": "2339-0", "text": "Glucose [Mass/volume] in Blood"}
+    ]
+  }
+}
+```
+
 ---
 
 ## 🛠️ Quickstart
@@ -130,7 +184,7 @@ MIT License. See [LICENSE](LICENSE).
 ## 🙏 Credits
 
 - Logo by [Freepik](https://www.freepik.com/icon/computer_8811410#fromView=search&page=1&position=5&uuid=7f2f0cf5-731f-4ab9-9ab6-1ec888c8328b) (Flaticon)
-- Project by [daveymason.com](https://daveymason.com)
+- Original project by [daveymason.com](https://daveymason.com)
 
 ---
 

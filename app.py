@@ -1451,6 +1451,44 @@ def get_order_sets():
         return jsonify({}), 500
 
 
+@app.route('/config/order-sets', methods=['PUT'])
+@login_required
+def save_order_sets():
+    """
+    Replaces the full order_sets dict in order_sets/common_orders.json.
+    Expects a JSON body that is the {setName: [{code, text}]} dict directly.
+    """
+    import json as _json
+    order_sets_path = os.path.join(os.path.dirname(__file__), 'order_sets', 'common_orders.json')
+    try:
+        new_sets = request.get_json(force=True, silent=True)
+        if not isinstance(new_sets, dict):
+            return 'Invalid JSON body: expected an object', 400
+        # Read existing file to preserve any extra top-level keys
+        try:
+            with open(order_sets_path, 'r', encoding='utf-8') as f:
+                data = _json.load(f)
+        except FileNotFoundError:
+            data = {}
+        data['order_sets'] = new_sets
+        with open(order_sets_path, 'w', encoding='utf-8') as f:
+            _json.dump(data, f, indent=4, ensure_ascii=False)
+        logging.info(f"Order sets saved: {list(new_sets.keys())}")
+        return jsonify({'status': 'ok', 'sets': list(new_sets.keys())})
+    except Exception as e:
+        logging.error(f"Error saving order_sets: {e}")
+        return str(e), 500
+
+
+@app.route('/fhir/order-sets-modal')
+@login_required
+def get_order_sets_modal():
+    """
+    Returns the order sets modal content for Vex.js
+    """
+    return render_template('order_sets_config.html')
+
+
 @app.route('/fhir/diagvalueset/expand')
 def diag_valueset_expand():
     """

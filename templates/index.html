@@ -13,6 +13,10 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Vex Modal Library -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vex-js/4.1.0/css/vex.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vex-js/4.1.0/css/vex-theme-default.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vex-js/4.1.0/js/vex.combined.min.js"></script>
     <!-- Custom CSS -->
     <link href="{{ url_for('static', filename='styles.css') }}" rel="stylesheet">
 </head>
@@ -20,12 +24,6 @@
     <!-- Sidebar -->
     {% include 'partials/sidebar.html' %}
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Check for Bootstrap Toast availability for airport.html
-        window.bootstrapToastReady = true;
-    </script>
     <div class="main-content">
         <div class="content-wrapper">
             <div class="container-fluid">
@@ -45,6 +43,252 @@
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/js/all.min.js" integrity="sha512-6sSYJqDreZRZGkJ3b+YfdhB3MzmuP9R7X1QZ6g5aIXhRvR1Y/N/P47jmnkENm7YL3oqsmI6AK+V6AD99uWDnIw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script>
+        // Configure Vex
+        vex.defaultOptions.className = 'vex-theme-default';
+        
+        // ── Order Sets State ────────────────────────────────────────────────────────
+        var _oscData = {};          // { setName: [{code, text}] }
+        var _oscEditing = null;     // name of set being edited (null = new)
+        var _oscRowSeq = 0;
+        
+        // ── Order Sets Modal ─────────────────────────────────────────────────────────
+        async function openOrderSetsModal() {
+            try {
+                // Fetch content from server
+                const response = await fetch('/fhir/order-sets-modal');
+                if (!response.ok) {
+                    throw new Error('Failed to load order sets modal');
+                }
+                const html = await response.text();
+                
+                // Open Vex modal with the content
+                vex.open({
+                    unsafeContent: html,
+                    className: 'vex-theme-default order-sets-vex-modal',
+                    afterOpen: function() {
+                        // Initialize order sets functionality after modal opens
+                        console.log('[Order Sets] Modal opened, verifying functions:', {
+                            oscSaveSet: typeof oscSaveSet,
+                            oscNewSet: typeof oscNewSet,
+                            oscEditSet: typeof oscEditSet
+                        });
+                        oscLoadSets();
+                        oscShowPlaceholder();
+                    }
+                });
+            } catch (error) {
+                console.error('Error opening order sets modal:', error);
+                vex.dialog.alert('Failed to load order sets configuration.');
+            }
+        }
+        
+        // ── Load ─────────────────────────────────────────────────────────────────────
+        async function oscLoadSets() {
+            try {
+                const resp = await fetch('/fhir/OrderSets', {
+                    credentials: 'same-origin'
+                });
+                _oscData = resp.ok ? await resp.json() : {};
+                console.log('[Order Sets] Loaded:', Object.keys(_oscData).length, 'sets');
+            } catch (e) {
+                console.error('[Order Sets] Load error:', e);
+                _oscData = {};
+            }
+            oscRenderList();
+        }
+        
+        // ── Render list ───────────────────────────────────────────────────────────────
+        function oscRenderList() {
+            const listEl = document.getElementById('oscSetList');
+            if (!listEl) return; // Modal not open yet
+            const names = Object.keys(_oscData);
+            if (names.length === 0) {
+                listEl.innerHTML = '<div class="text-muted small text-center py-3">No order sets defined yet.</div>';
+                return;
+            }
+            listEl.innerHTML = names.map(name => {
+                const count = Array.isArray(_oscData[name]) ? _oscData[name].length : 0;
+                const isActive = _oscEditing === name;
+                const escapedName = name.replace(/'/g, "\\'");
+                return `<button type="button"
+                            class="list-group-item list-group-item-action d-flex justify-content-between align-items-center${isActive ? ' active' : ''}"
+                            onclick="oscEditSet('${escapedName}')">
+                          <span>${escHtml(name)}</span>
+                          <span class="badge ${isActive ? 'bg-light text-dark' : 'bg-primary'} rounded-pill">${count}</span>
+                        </button>`;
+            }).join('');
+        }
+        
+        // ── New ───────────────────────────────────────────────────────────────────────
+        function oscNewSet() {
+            console.log('[Order Sets] oscNewSet() called');
+            _oscEditing = null;
+            document.getElementById('oscSetName').value = '';
+            document.getElementById('oscOriginalName').value = '';
+            document.getElementById('oscTestRows').innerHTML = '';
+            oscAddTestRow(); // start with one blank row
+            oscShowEditor(false);
+            oscRenderList();
+            console.log('[Order Sets] New set form ready, Save button visible');
+        }
+        
+        // ── Edit ─────────────────────────────────────────────────────────────────────
+        function oscEditSet(name) {
+            console.log('[Order Sets] oscEditSet() called for:', name);
+            _oscEditing = name;
+            document.getElementById('oscSetName').value = name;
+            document.getElementById('oscOriginalName').value = name;
+            const tests = _oscData[name] || [];
+            console.log('[Order Sets] Editing set with', tests.length, 'tests');
+            const rowsEl = document.getElementById('oscTestRows');
+            rowsEl.innerHTML = '';
+            tests.forEach(t => oscAddTestRow(t.code || '', t.text || t.display || ''));
+            if (tests.length === 0) oscAddTestRow();
+            oscShowEditor(true);
+            oscRenderList();
+            console.log('[Order Sets] Edit form ready, Save button visible');
+        }
+        
+        // ── Add test row ──────────────────────────────────────────────────────────────
+        function oscAddTestRow(code = '', display = '') {
+            const id = ++_oscRowSeq;
+            const rowsEl = document.getElementById('oscTestRows');
+            const div = document.createElement('div');
+            div.className = 'input-group mb-1';
+            div.id = `oscRow_${id}`;
+            div.innerHTML = `
+                <input type="text" class="form-control form-control-sm" placeholder="Code (SNOMED)" value="${escAttr(code)}" style="max-width:160px;">
+                <input type="text" class="form-control form-control-sm" placeholder="Display name" value="${escAttr(display)}">
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="document.getElementById('oscRow_${id}').remove()" title="Remove row">
+                  <i class="fas fa-times"></i>
+                </button>`;
+            rowsEl.appendChild(div);
+            // Focus on the display label field of the new row
+            div.querySelectorAll('input')[1].focus();
+        }
+        
+        // ── Collect rows ──────────────────────────────────────────────────────────────
+        function oscCollectTests() {
+            const rows = document.querySelectorAll('#oscTestRows .input-group');
+            const tests = [];
+            rows.forEach(row => {
+                const inputs = row.querySelectorAll('input[type=text]');
+                const code = inputs[0].value.trim();
+                const text = inputs[1].value.trim();
+                if (text) tests.push({ code, text });
+            });
+            return tests;
+        }
+        
+        // ── Save ──────────────────────────────────────────────────────────────────────
+        async function oscSaveSet() {
+            console.log('[Order Sets] oscSaveSet() called');
+            const newName = document.getElementById('oscSetName').value.trim();
+            const origName = document.getElementById('oscOriginalName').value;
+            const tests = oscCollectTests();
+            console.log('[Order Sets] Saving set:', newName, 'with', tests.length, 'tests');
+        
+            if (!newName) { oscAlert('danger', 'Please enter a set name.'); return; }
+            if (tests.length === 0) { oscAlert('danger', 'Add at least one test.'); return; }
+        
+            // Rename: remove old key, add new
+            if (origName && origName !== newName && _oscData[origName] !== undefined) {
+                console.log('[Order Sets] Renaming from', origName, 'to', newName);
+                delete _oscData[origName];
+            }
+            _oscData[newName] = tests;
+        
+            const ok = await oscPersist();
+            if (ok) {
+                _oscEditing = newName;
+                document.getElementById('oscOriginalName').value = newName;
+                oscRenderList();
+                oscAlert('success', `"${newName}" saved (${tests.length} test${tests.length !== 1 ? 's' : ''}).`);
+                // Refresh the in-memory cache used by the diag request modal
+                if (typeof loadOrderSets === 'function') loadOrderSets();
+            }
+        }
+        
+        // ── Delete ────────────────────────────────────────────────────────────────────
+        async function oscDeleteSet() {
+            const name = document.getElementById('oscOriginalName').value;
+            if (!name || !_oscData[name]) return;
+            if (!confirm(`Delete order set "${name}"?`)) return;
+            delete _oscData[name];
+            const ok = await oscPersist();
+            if (ok) {
+                _oscEditing = null;
+                oscShowPlaceholder();
+                oscRenderList();
+                if (typeof loadOrderSets === 'function') loadOrderSets();
+            }
+        }
+        
+        // ── Persist to server ─────────────────────────────────────────────────────────
+        async function oscPersist() {
+            try {
+                console.log('[Order Sets] Saving:', _oscData);
+                const resp = await fetch('/config/order-sets', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(_oscData)
+                });
+                console.log('[Order Sets] Response status:', resp.status);
+                if (!resp.ok) {
+                    const msg = await resp.text();
+                    console.error('[Order Sets] Save failed:', msg);
+                    oscAlert('danger', `Save failed: ${msg}`);
+                    return false;
+                }
+                const result = await resp.json();
+                console.log('[Order Sets] Saved successfully:', result);
+                return true;
+            } catch (e) {
+                console.error('[Order Sets] Error:', e);
+                oscAlert('danger', `Save error: ${e.message}`);
+                return false;
+            }
+        }
+        
+        // ── UI helpers ────────────────────────────────────────────────────────────────
+        function oscShowEditor(showDelete) {
+            console.log('[Order Sets] oscShowEditor() called, showDelete:', showDelete);
+            const editor = document.getElementById('oscEditor');
+            const placeholder = document.getElementById('oscEditorPlaceholder');
+            editor.style.display = '';
+            placeholder.style.display = 'none';
+            placeholder.style.pointerEvents = 'none';
+            const saveBtn = document.getElementById('oscSaveBtn');
+            saveBtn.style.display = '';
+            console.log('[Order Sets] Save button display set to:', saveBtn.style.display, 'visibility:', window.getComputedStyle(saveBtn).display);
+            document.getElementById('oscDeleteBtn').style.display = showDelete ? '' : 'none';
+            document.getElementById('oscEditorAlert').style.display = 'none';
+        }
+        function oscShowPlaceholder() {
+            const editor = document.getElementById('oscEditor');
+            const placeholder = document.getElementById('oscEditorPlaceholder');
+            editor.style.display = 'none';
+            placeholder.style.display = '';
+            placeholder.style.pointerEvents = 'none'; // Placeholder is just informational, should never block clicks
+            document.getElementById('oscSaveBtn').style.display = 'none';
+            document.getElementById('oscDeleteBtn').style.display = 'none';
+        }
+        function oscAlert(type, msg) {
+            const el = document.getElementById('oscEditorAlert');
+            el.className = `alert alert-${type} mt-2 py-1 px-2 small`;
+            el.textContent = msg;
+            el.style.display = '';
+            if (type === 'success') setTimeout(() => { el.style.display = 'none'; }, 3000);
+        }
+        function escHtml(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+        function escAttr(s) {
+            return String(s).replace(/"/g,'&quot;');
+        }
+    </script>
     <script>
         // Global HTMX configuration to add FHIR server URL and auth headers to all requests
         document.body.addEventListener('htmx:configRequest', function(evt) {

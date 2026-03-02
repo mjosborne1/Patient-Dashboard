@@ -1133,5 +1133,62 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
     </div>
 </main>
+    {% include 'order_sets_config.html' %}
+    <script>
+        // Initialize Order Sets modal after Bootstrap is loaded
+        const modalEl = document.getElementById('orderSetsConfigModal');
+        
+        if (modalEl) {
+            // Listen for when modal should open
+            document.querySelector('a[data-bs-target="#orderSetsConfigModal"]').addEventListener('click', async function(e) {
+                e.preventDefault();
+                
+                try {
+                    await oscLoadSets();
+                    oscShowPlaceholder();
+                    
+                    // Manually control the modal display
+                    const backdrop = document.createElement('div');
+                    backdrop.className = 'modal-backdrop fade show';
+                    backdrop.id = 'oscBackdrop';
+                    document.body.appendChild(backdrop);
+                    
+                    modalEl.style.display = 'block';
+                    modalEl.classList.add('show');
+                    modalEl.setAttribute('aria-modal', 'true');
+                    modalEl.setAttribute('role', 'dialog');
+                    modalEl.removeAttribute('aria-hidden');
+                    document.body.classList.add('modal-open');
+                    
+                    const closeModal = () => {
+                        modalEl.style.display = 'none';
+                        modalEl.classList.remove('show');
+                        modalEl.setAttribute('aria-hidden', 'true');
+                        modalEl.removeAttribute('aria-modal');
+                        modalEl.removeAttribute('role');
+                        document.body.classList.remove('modal-open');
+                        const bd = document.getElementById('oscBackdrop');
+                        if (bd) bd.remove();
+                    };
+                    
+                    backdrop.addEventListener('click', closeModal);
+                    modalEl.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn => {
+                        btn.onclick = closeModal;
+                    });
+                    
+                    const escHandler = (e) => {
+                        if (e.key === 'Escape') {
+                            closeModal();
+                            document.removeEventListener('keydown', escHandler);
+                        }
+                    };
+                    document.addEventListener('keydown', escHandler);
+                    
+                } catch (err) {
+                    console.error('[MODAL ERROR]', err);
+                }
+            });
+        }
+    </script>
 </body>
 </html>

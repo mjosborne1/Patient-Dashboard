@@ -1,0 +1,42 @@
+{
+    "order_sets": {
+        "Male over 50": [
+            { "code": "26604007",  "text": "FBC" },
+            { "code": "444164000", "text": "UEC" },
+            { "code": "26958001",  "text": "LFT" },
+            { "code": "252150008", "text": "Fasting Lipids" },
+            { "code": "63476009",  "text": "PSA" }
+        ],
+        "Female over 50": [
+            { "code": "26604007",  "text": "FBC" },
+            { "code": "444164000", "text": "UEC" },
+            { "code": "26958001",  "text": "LFT" },
+            { "code": "252150008", "text": "Fasting Lipids" },
+            { "code": "313440008", "text": "TSH" }
+        ],
+        "Diabetes monitoring": [
+            { "code": "43396009",  "text": "HbA1c" },
+            { "code": "444164000", "text": "UEC" },
+            { "code": "252150008", "text": "Fasting Lipids" },
+            { "code": "26604007",  "text": "FBC" },
+            { "code": "167271000", "text": "Urine albumin creatinine ratio" }
+        ],
+        "Cardiovascular risk": [
+            { "code": "252150008", "text": "Fasting Lipids" },
+            { "code": "43396009",  "text": "HbA1c" },
+            { "code": "444164000", "text": "UEC" },
+            { "code": "26604007",  "text": "FBC" }
+        ],
+        "Thyroid screen": [
+            { "code": "313440008", "text": "TSH" },
+            { "code": "26604007",  "text": "FBC" }
+        ],
+        "Pre-operative": [
+            { "code": "26604007",  "text": "FBC" },
+            { "code": "444164000", "text": "UEC" },
+            { "code": "26958001",  "text": "LFT" },
+            { "code": "441545008", "text": "Coagulation studies" },
+            { "code": "252150008", "text": "Fasting Lipids" }
+        ]
+    }
+}

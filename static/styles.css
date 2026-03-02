@@ -450,3 +450,53 @@ h5.text-primary,
 h6.text-primary {
     color: var(--tropical-dark) !important;
 }
+
+/* Vex Modal Customization for Order Sets */
+.order-sets-vex-modal {
+    max-width: none !important;
+}
+
+.order-sets-vex-modal .vex-content {
+    padding: 0 !important;
+    border-radius: 12px;
+    max-height: 90vh;
+    overflow: auto;
+    width: auto !important;
+    max-width: 90vw !important;
+}
+
+.order-sets-config-content {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    min-width: 700px;
+    overflow: visible;
+}
+
+.order-sets-config-content .row {
+    margin: 0;
+}
+
+.order-sets-config-content .modal-body {
+    overflow: visible;
+}
+
+.order-sets-config-content .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.order-sets-config-content .modal-header .btn-close {
+    background: transparent url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23000'%3e%3cpath d='M.293.293a1 1 0 011.414 0L8 6.586 14.293.293a1 1 0 111.414 1.414L9.414 8l6.293 6.293a1 1 0 01-1.414 1.414L8 9.414l-6.293 6.293a1 1 0 01-1.414-1.414L6.586 8 .293 1.707a1 1 0 010-1.414z'/%3e%3c/svg%3e") center/1em auto no-repeat;
+    border: none;
+    padding: 0.5rem;
+    opacity: 0.5;
+    width: 1em;
+    height: 1em;
+    cursor: pointer;
+}
+
+.order-sets-config-content .modal-header .btn-close:hover {
+    opacity: 0.75;
+}

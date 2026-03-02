@@ -1,0 +1,72 @@
+<!-- Order Sets Configuration Content for Vex Modal -->
+<div class="order-sets-config-content" style="width: 1200px; max-width: 90vw;">
+  <div class="modal-header border-bottom pb-3 mb-3">
+    <h5 class="modal-title">
+      <i class="fas fa-layer-group me-2"></i>Common Order Sets
+    </h5>
+    <button type="button" class="btn-close" onclick="vex.closeAll();" aria-label="Close"></button>
+  </div>
+  <div class="modal-body" style="min-height: 420px;">
+    <div class="row g-3">
+
+          <!-- Left panel: list of saved sets -->
+          <div class="col-md-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0 fw-bold">Saved Sets</h6>
+              <button type="button" class="btn btn-sm btn-outline-primary" onclick="oscNewSet()">
+                <i class="fas fa-plus"></i> New
+              </button>
+            </div>
+            <div id="oscSetList" class="list-group" style="max-height: 400px; overflow-y: auto;">
+              <div class="text-muted small text-center py-3">
+                <i class="fas fa-spinner fa-spin"></i> Loading…
+              </div>
+            </div>
+          </div>
+
+          <!-- Right panel: editor -->
+          <div class="col-md-8" style="position: relative;">
+            <div id="oscEditor" style="display:none;">
+              <div class="mb-3">
+                <label for="oscSetName" class="form-label fw-bold">Set Name</label>
+                <input type="text" class="form-control" id="oscSetName" placeholder="e.g. Male over 50">
+                <input type="hidden" id="oscOriginalName">
+              </div>
+
+              <div class="mb-2 d-flex justify-content-between align-items-center">
+                <label class="form-label fw-bold mb-0">Tests</label>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="oscAddTestRow()">
+                  <i class="fas fa-plus"></i> Add test
+                </button>
+              </div>
+
+              <div id="oscTestRows" style="max-height: 280px; overflow-y: auto;">
+                <!-- rows injected by JS -->
+              </div>
+
+              <div id="oscEditorAlert" class="alert mt-2" style="display:none;"></div>
+            </div>
+
+            <!-- placeholder when nothing selected -->
+            <div id="oscEditorPlaceholder" class="text-muted d-flex flex-column justify-content-center align-items-center" style="min-height: 300px; pointer-events: none;">
+              <i class="fas fa-layer-group fa-3x mb-3 opacity-25"></i>
+              <p>Select a set on the left to edit it,<br>or click <strong>+ New</strong> to create one.</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+  <div class="modal-footer justify-content-between border-top pt-3 mt-3">
+    <div>
+      <button type="button" class="btn btn-danger" id="oscDeleteBtn" style="display:none;" onclick="oscDeleteSet()">
+        <i class="fas fa-trash"></i> Delete Set
+      </button>
+    </div>
+    <div>
+      <button type="button" class="btn btn-secondary" onclick="vex.closeAll();">Close</button>
+      <button type="button" class="btn btn-primary" id="oscSaveBtn" style="display:none;" onclick="console.log('[Order Sets] Save button clicked'); oscSaveSet();">
+        <i class="fas fa-save"></i> Save Set
+      </button>
+    </div>
+  </div>
+</div>

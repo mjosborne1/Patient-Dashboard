@@ -77,7 +77,7 @@ Configure reusable groups of diagnostic tests to streamline ordering workflows. 
 ### Features
 
 - **Create & Edit** – Define named groups of commonly ordered tests together (e.g., "Male over 50", "Diabetes monitoring")
-- **Persistent Storage** – Order sets are stored in `order_sets/common_orders.json` and persist across sessions
+- **Persistent Storage** – Order sets are stored separately in `order_sets/pathology_common_orders.json` and `order_sets/imaging_common_orders.json` and persist across sessions
 - **Quick Access** – Saved sets appear in the diagnostic request form for one-click selection
 - **Visual Editor** – Modal interface with drag-free test management using [Vex.js](http://github.hubspot.com/vex/)
 - **CRUD Operations** – Create new sets, edit existing ones, rename, or delete
@@ -88,9 +88,10 @@ Configure reusable groups of diagnostic tests to streamline ordering workflows. 
 |---|---|---|
 | Configuration UI | `templates/order_sets_config.html` | Modal interface for managing order sets |
 | Frontend Logic | `templates/index.html` | JavaScript functions (`osc*`) handle UI state, editing, and persistence |
-| Storage API | `app.py` → `/config/order-sets` | PUT endpoint saves order sets to JSON file |
-| Retrieval API | `app.py` → `/fhir/OrderSets` | GET endpoint returns all saved order sets |
-| Data File | `order_sets/common_orders.json` | JSON structure: `{"order_sets": {"SetName": [{"code": "...", "text": "..."}]}}` |
+| Storage API | `app.py` → `/config/order-sets` | PUT endpoint saves order sets to pathology and imaging JSON files |
+| Retrieval API | `app.py` → `/fhir/OrderSets` | GET endpoint returns merged order sets from both files |
+| Pathology Data | `order_sets/pathology_common_orders.json` | Lab/Pathology order sets: `{"order_sets": {"SetName": [{"code": "...", "text": "..."}]}}` |
+| Imaging Data | `order_sets/imaging_common_orders.json` | Radiology/Imaging order sets: `{"order_sets": {"SetName": [{"code": "...", "text": "..."}]}}` |
 | Integration | Diagnostic request form | Loads order sets for quick test selection |
 
 ### Usage

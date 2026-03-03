@@ -1,0 +1,34 @@
+{
+    "order_sets": {
+        "Chest X-ray": [
+            {
+                "code": "399208008",
+                "text": "Chest X-ray"
+            }
+        ],
+        "MRI Head": [
+            {
+                "code": "241601008",
+                "text": "MRI Head"
+            }
+        ],
+        "US Liver": [
+            {
+                "code": "105377009",
+                "text": "US Liver"
+            }
+        ],
+        "Left Foot X-ray": [
+            {
+                "code": "426908009",
+                "text": "X-ray of left foot"
+            }
+        ],
+        "Right Foot X-ray": [
+            {
+                "code": "426311001",
+                "text": "Plain X-ray of right foot"
+            }
+        ]
+    }
+}

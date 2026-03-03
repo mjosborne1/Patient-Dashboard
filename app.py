@@ -1433,48 +1433,131 @@ def generate_bundle_mermaid():
 @login_required
 def get_order_sets():
     """
-    Returns the common order sets defined in order_sets/common_orders.json.
-    Returns the 'order_sets' dict keyed by set name, each value being a list of
-    {code, text} objects.
+    Returns the common order sets from both pathology and imaging order set files,
+    organized by request category.
+    
+    Returns structure:
+    {
+        "Pathology": {...},  # Order sets from pathology_common_orders.json
+        "Radiology": {...}   # Order sets from imaging_common_orders.json
+    }
     """
     import json as _json
-    order_sets_path = os.path.join(os.path.dirname(__file__), 'order_sets', 'common_orders.json')
+    order_sets_dir = os.path.join(os.path.dirname(__file__), 'order_sets')
+    organized_sets = {
+        'Pathology': {},
+        'Radiology': {}
+    }
+    
+    # Load pathology order sets
+    pathology_path = os.path.join(order_sets_dir, 'pathology_common_orders.json')
     try:
-        with open(order_sets_path, 'r', encoding='utf-8') as f:
-            data = _json.load(f)
-        return jsonify(data.get('order_sets', {}))
+        with open(pathology_path, 'r', encoding='utf-8') as f:
+            pathology_data = _json.load(f)
+        organized_sets['Pathology'] = pathology_data.get('order_sets', {})
+        logging.info(f"Loaded {len(organized_sets['Pathology'])} pathology order sets")
     except FileNotFoundError:
-        logging.warning(f"order_sets file not found at {order_sets_path}")
-        return jsonify({})
+        logging.warning(f"Pathology order sets file not found at {pathology_path}")
     except Exception as e:
-        logging.error(f"Error reading order_sets: {e}")
-        return jsonify({}), 500
+        logging.error(f"Error reading pathology order_sets: {e}")
+    
+    # Load imaging order sets
+    imaging_path = os.path.join(order_sets_dir, 'imaging_common_orders.json')
+    try:
+        with open(imaging_path, 'r', encoding='utf-8') as f:
+            imaging_data = _json.load(f)
+        organized_sets['Radiology'] = imaging_data.get('order_sets', {})
+        logging.info(f"Loaded {len(organized_sets['Radiology'])} imaging order sets")
+    except FileNotFoundError:
+        logging.warning(f"Imaging order sets file not found at {imaging_path}")
+    except Exception as e:
+        logging.error(f"Error reading imaging order_sets: {e}")
+    
+    return jsonify(organized_sets)
 
 
 @app.route('/config/order-sets', methods=['PUT'])
 @login_required
 def save_order_sets():
     """
-    Replaces the full order_sets dict in order_sets/common_orders.json.
+    Saves order sets to both pathology_common_orders.json and imaging_common_orders.json.
+    Intelligently distributes order sets:
+      - Sets that existed in pathology file are saved to pathology
+      - Sets that existed in imaging file are saved to imaging  
+      - New sets default to pathology unless they contain radiology keywords
+    
     Expects a JSON body that is the {setName: [{code, text}]} dict directly.
     """
     import json as _json
-    order_sets_path = os.path.join(os.path.dirname(__file__), 'order_sets', 'common_orders.json')
+    order_sets_dir = os.path.join(os.path.dirname(__file__), 'order_sets')
+    pathology_path = os.path.join(order_sets_dir, 'pathology_common_orders.json')
+    imaging_path = os.path.join(order_sets_dir, 'imaging_common_orders.json')
+    
     try:
         new_sets = request.get_json(force=True, silent=True)
         if not isinstance(new_sets, dict):
             return 'Invalid JSON body: expected an object', 400
-        # Read existing file to preserve any extra top-level keys
+        
+        # Load existing sets from both files to track origins
+        pathology_sets = {}
+        imaging_sets = {}
+        
         try:
-            with open(order_sets_path, 'r', encoding='utf-8') as f:
-                data = _json.load(f)
+            with open(pathology_path, 'r', encoding='utf-8') as f:
+                pathology_data = _json.load(f)
+                pathology_sets = pathology_data.get('order_sets', {})
         except FileNotFoundError:
-            data = {}
-        data['order_sets'] = new_sets
-        with open(order_sets_path, 'w', encoding='utf-8') as f:
-            _json.dump(data, f, indent=4, ensure_ascii=False)
-        logging.info(f"Order sets saved: {list(new_sets.keys())}")
-        return jsonify({'status': 'ok', 'sets': list(new_sets.keys())})
+            pass
+        except Exception as e:
+            logging.warning(f"Could not read existing pathology sets: {e}")
+        
+        try:
+            with open(imaging_path, 'r', encoding='utf-8') as f:
+                imaging_data = _json.load(f)
+                imaging_sets = imaging_data.get('order_sets', {})
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logging.warning(f"Could not read existing imaging sets: {e}")
+        
+        # Distribute new sets to appropriate files based on origin
+        updated_pathology_sets = {}
+        updated_imaging_sets = {}
+        radiology_keywords = ['imaging', 'x-ray', 'xray', 'mri', 'ct scan', 'ultrasound', 'us ', 
+                             'radiograph', 'scan', 'tomography', 'echo', 'mammograph']
+        
+        for set_name, tests in new_sets.items():
+            name_lower = set_name.lower()
+            
+            # Check where this set originally came from
+            if set_name in pathology_sets:
+                updated_pathology_sets[set_name] = tests
+            elif set_name in imaging_sets:
+                updated_imaging_sets[set_name] = tests
+            else:
+                # New set - use keywords to determine destination, default to pathology
+                if any(keyword in name_lower for keyword in radiology_keywords):
+                    updated_imaging_sets[set_name] = tests
+                else:
+                    updated_pathology_sets[set_name] = tests
+        
+        # Save pathology order sets
+        pathology_data = {'order_sets': updated_pathology_sets}
+        with open(pathology_path, 'w', encoding='utf-8') as f:
+            _json.dump(pathology_data, f, indent=4, ensure_ascii=False)
+        logging.info(f"Pathology order sets saved: {list(updated_pathology_sets.keys())}")
+        
+        # Save imaging order sets
+        imaging_data = {'order_sets': updated_imaging_sets}
+        with open(imaging_path, 'w', encoding='utf-8') as f:
+            _json.dump(imaging_data, f, indent=4, ensure_ascii=False)
+        logging.info(f"Imaging order sets saved: {list(updated_imaging_sets.keys())}")
+        
+        return jsonify({
+            'status': 'success',
+            'pathology_count': len(updated_pathology_sets),
+            'imaging_count': len(updated_imaging_sets)
+        })
     except Exception as e:
         logging.error(f"Error saving order_sets: {e}")
         return str(e), 500

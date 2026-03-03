@@ -1262,6 +1262,74 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                 "url": "Consent"
             }
         })
+    
+    # Add CommunicationRequest for "Don't contact patient" preference if selected
+    do_not_contact = form_data.get('doNotContactPatient', False)
+    if do_not_contact and service_requests:  # Only create if there are ServiceRequests to reference
+        comm_req_dnc_id = str(uuid.uuid4())
+        
+        # Build about array with references to all ServiceRequests
+        about_refs = []
+        for sr in service_requests:
+            sr_ref = f"ServiceRequest/urn:uuid:{sr['id']}" if USE_BROKEN_SMILECDR_MODE else f"urn:uuid:{sr['id']}"
+            about_refs.append({
+                "reference": sr_ref
+            })
+        
+        comm_request_dnc = {
+            "resourceType": "CommunicationRequest",
+            "meta": {
+                "profile": [
+                    "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-communicationrequest-patient"
+                ]
+            },
+            "id": comm_req_dnc_id,
+            "groupIdentifier": {
+                "type": {
+                    "coding": [{
+                        "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                        "code": "PGN",
+                        "display": "Placer Group Number"
+                    }],
+                    "text": "Placer Group Number"
+                },
+                "system": "http://myclinic.example.org.au/identifier",
+                "value": requisition_number,
+                "assigner": organization_reference if organization_reference else {"display": "Requesting Organisation"}
+            },
+            "status": "active",
+            "category": [{
+                "coding": [{
+                    "system": "http://terminology.hl7.org.au/CodeSystem/communication-request-category",
+                    "code": "patient-preference",
+                    "display": "Patient Preference"
+                }]
+            }],
+            "doNotPerform": True,
+            "medium": [{
+                "coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationMode",
+                    "code": "SMSWRIT"
+                }],
+                "text": "SMS"
+            }],
+            "subject": patient_reference,
+            "about": about_refs,
+            "authoredOn": get_localtime_bne(),
+            "requester": patient_reference,
+            "recipient": [patient_reference],
+            "sender": organization_reference if organization_reference else {"display": "Requesting Organisation"}
+        }
+        
+        # Add CommunicationRequest to bundle
+        transaction_bundle["entry"].append({
+            "fullUrl": f"urn:uuid:{comm_req_dnc_id}",
+            "resource": comm_request_dnc,
+            "request": {
+                "method": "POST",
+                "url": "CommunicationRequest"
+            }
+        })
         
     # Create a Task group that references all ServiceRequests - MUST BE LAST for filler processing trigger
     if service_requests:

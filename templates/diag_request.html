@@ -313,6 +313,20 @@
             </div>
           </div>
         </div>
+        
+        <!-- Don't contact patient by SMS -->
+        <div class="mb-3 mt-3">
+          <div class="form-check-group"> 
+            <label class="form-label" id="doNotContactLabel">Patient SMS Preference</label>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="doNotContactPatient" name="doNotContactPatient" value="true">
+              <label class="form-check-label" for="doNotContactPatient">
+                Don't contact patient by SMS
+              </label>
+            </div>
+          </div>
+        </div>
+        
         <!-- Request Status -->
         <div class="mb-3 mt-3">
           <label class="form-label" id="requestStatusLabel">Request Status</label>
@@ -462,6 +476,7 @@
 
 <script>
 window.selectedTests = Array.isArray(window.selectedTests) ? window.selectedTests : [];
+window.justAppliedOrderSet = false;
 
 
 
@@ -494,32 +509,52 @@ function renderSelectedTests() {
 }
 
 // ── Common Order Sets ─────────────────────────────────────────────────────────
-window.orderSetsData = {};
+window.orderSetsDataByCategory = { 'Pathology': {}, 'Radiology': {} };
 
 async function loadOrderSets() {
     try {
         const resp = await fetch('/fhir/OrderSets');
         if (!resp.ok) return;
-        window.orderSetsData = await resp.json();
-        const sel = document.getElementById('commonOrderSet');
-        if (!sel) return;
-        // Remove any previously populated options but keep the placeholder
-        while (sel.options.length > 1) sel.remove(1);
-        Object.entries(window.orderSetsData).forEach(([name, tests]) => {
-            const opt = document.createElement('option');
-            opt.value = name;
-            const n = Array.isArray(tests) ? tests.length : 0;
-            opt.textContent = `${name}  (${n} test${n !== 1 ? 's' : ''})`;
-            sel.appendChild(opt);
-        });
+        window.orderSetsDataByCategory = await resp.json();
+        filterAndPopulateOrderSets();
     } catch (e) {
         console.warn('[OrderSets] Failed to load order sets:', e);
     }
 }
 
+function filterAndPopulateOrderSets() {
+    // Get selected request category
+    const selectedCategory = document.querySelector('input[name="requestCategory"]:checked')?.value || 'Pathology';
+    const sel = document.getElementById('commonOrderSet');
+    if (!sel) return;
+    
+    // Remove any previously populated options but keep the placeholder
+    while (sel.options.length > 1) sel.remove(1);
+    
+    // Get order sets for the selected category
+    const orderSetsForCategory = window.orderSetsDataByCategory[selectedCategory] || {};
+    
+    // Populate dropdown with filtered order sets
+    Object.entries(orderSetsForCategory).forEach(([name, tests]) => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        const n = Array.isArray(tests) ? tests.length : 0;
+        opt.textContent = `${name}  (${n} test${n !== 1 ? 's' : ''})`;
+        sel.appendChild(opt);
+    });
+    
+    // Reset selection
+    sel.value = '';
+}
+
 function applyOrderSet(setName) {
     if (!setName) return;
-    const tests = window.orderSetsData[setName];
+    
+    // Get selected request category to look up the correct tests
+    const selectedCategory = document.querySelector('input[name="requestCategory"]:checked')?.value || 'Pathology';
+    const orderSetsForCategory = window.orderSetsDataByCategory[selectedCategory] || {};
+    const tests = orderSetsForCategory[setName];
+    
     if (!Array.isArray(tests)) return;
 
     let added = 0, skipped = 0;
@@ -546,6 +581,21 @@ function applyOrderSet(setName) {
     // Reset dropdown to placeholder
     const sel = document.getElementById('commonOrderSet');
     if (sel) sel.value = '';
+    
+    // Clear the testName field and set flag to prevent showing empty dropdown message
+    const testNameInput = document.getElementById('testName');
+    if (testNameInput) {
+        testNameInput.value = '';
+        // Hide the dropdown
+        const dropdown = document.getElementById('testNameDropdown');
+        if (dropdown) dropdown.style.display = 'none';
+    }
+    
+    // Set flag to suppress the "no matching tests found" message for a moment
+    window.justAppliedOrderSet = true;
+    setTimeout(() => {
+        window.justAppliedOrderSet = false;
+    }, 500);
 
     // Brief feedback
     const fb = document.getElementById('orderSetFeedback');
@@ -1727,6 +1777,20 @@ function updateStatusReasonVisibility() {
 // Attach event listeners to Request Status radios
 document.getElementById('requestStatusActive').addEventListener('change', updateStatusReasonVisibility);
 document.getElementById('requestStatusOnHold').addEventListener('change', updateStatusReasonVisibility);
+
+// Attach event listeners to Request Category radios to re-filter order sets
+document.getElementById('pathologyRequest').addEventListener('change', filterAndPopulateOrderSets);
+document.getElementById('radiologyRequest').addEventListener('change', filterAndPopulateOrderSets);
+
+// Prevent showing empty dropdown message after applying an order set
+document.getElementById('testName').addEventListener('htmx:beforeSwap', function(evt) {
+    // If we just applied an order set and the field is empty, suppress the dropdown
+    if (window.justAppliedOrderSet && this.value.trim() === '') {
+        evt.detail.shouldSwap = false;
+        const dropdown = document.getElementById('testNameDropdown');
+        if (dropdown) dropdown.style.display = 'none';
+    }
+});
 
 // Reset selectedTests and selectedReasons when the modal is opened
 document.getElementById('createDiagnosticRequestModal').addEventListener('shown.bs.modal', function () {

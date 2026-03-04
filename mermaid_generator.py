@@ -82,6 +82,22 @@ def generate_mermaid(graph: Graph, bundle_title: str = "FHIR Bundle Diagram") ->
         group_node_ids = [node_id_map[node_id] for node_id in graph.group_tasks if node_id in node_id_map]
         if group_node_ids:
             lines.append(f"    class {','.join(group_node_ids)} taskGroup")
+
+    # Add click handlers for nodes with profile URLs
+    if graph.node_profiles:
+        lines.append("")
+        lines.append("    %% Interactive profile links")
+        for node_id, profiles in graph.node_profiles.items():
+            if node_id in node_id_map and profiles:
+                # Use the first profile URL (most specific)
+                canonical_url = profiles[0]
+                browsable_url = _convert_canonical_to_browsable_url(canonical_url)
+                if browsable_url:
+                    sanitized_id = node_id_map[node_id]
+                    profile_name = canonical_url.split('/')[-1]
+                    # Escape quotes in the tooltip
+                    tooltip = profile_name.replace('"', '\\"')
+                    lines.append(f'    click {sanitized_id} "{browsable_url}" "View {tooltip} profile" _blank')
     
     return '\n'.join(lines)
 
@@ -161,3 +177,75 @@ def _escape_mermaid_label(label: str) -> str:
         label = label[:max_length-3] + '...'
     
     return label
+
+
+def _convert_canonical_to_browsable_url(canonical_url: str) -> str:
+    """
+    Convert a FHIR canonical URL to a browsable IG profile URL.
+    
+    Examples:
+    - http://hl7.org/fhir/StructureDefinition/Patient 
+      → https://hl7.org/fhir/R4/patient.html
+    - http://hl7.org.au/fhir/StructureDefinition/au-patient
+      → https://build.fhir.org/ig/hl7au/au-fhir-base/StructureDefinition-au-patient.html
+    - http://hl7.org/fhir/uv/ips/StructureDefinition/Observation-pregnancy-status-uv-ips
+      → https://build.fhir.org/ig/HL7/fhir-ips/StructureDefinition-Observation-pregnancy-status-uv-ips.html
+    - http://hl7.org.au/fhir/ereq/StructureDefinition/au-...
+      → https://build.fhir.org/ig/hl7au/au-ereq/StructureDefinition-au-....html
+    
+    Args:
+        canonical_url: The canonical URL from meta.profile
+        
+    Returns:
+        Browsable URL for the profile documentation
+    """
+    if not canonical_url:
+        return ""
+    
+    # Standard FHIR R4 core resources
+    if canonical_url.startswith('http://hl7.org/fhir/StructureDefinition/'):
+        resource_name = canonical_url.split('/')[-1].lower()
+        return f"https://hl7.org/fhir/R4/{resource_name}.html"
+    
+    # HL7 Australia Implementation Guides with specific sub-IG (e.g., ereq, core-ig)
+    # http://hl7.org.au/fhir/{ig-name}/StructureDefinition/{profile-name}
+    if canonical_url.startswith('http://hl7.org.au/fhir/'):
+        parts = canonical_url.split('/')
+        # Extract the IG name (e.g., "ereq", "core-ig")
+        if len(parts) >= 5 and parts[4] != 'StructureDefinition':
+            ig_name = parts[4]
+            profile_name = canonical_url.split('/')[-1]
+            # Map AU sub-IG names to their GitHub repository paths
+            au_ig_map = {
+                'ereq': 'au-fhir-erequesting',
+                'core': 'au-fhir-core',
+            }
+            repo_path = au_ig_map.get(ig_name, f'au-fhir-{ig_name}')
+            return f"https://build.fhir.org/ig/hl7au/{repo_path}/StructureDefinition-{profile_name}.html"
+        # Fallback for base AU profiles without sub-IG
+        elif len(parts) >= 4:
+            profile_name = canonical_url.split('/')[-1]
+            return f"https://build.fhir.org/ig/hl7au/au-fhir-base/StructureDefinition-{profile_name}.html"
+    
+    # HL7 International Implementation Guides (UV, IPS, etc.)
+    # http://hl7.org/fhir/uv/{ig-name}/StructureDefinition/{profile-name}
+    if canonical_url.startswith('http://hl7.org/fhir/uv/'):
+        parts = canonical_url.split('/')
+        # parts = ['http:', '', 'hl7.org', 'fhir', 'uv', 'igs-name', 'StructureDefinition', ...]
+        ig_name = parts[5] if len(parts) > 5 else 'unknown'
+        profile_name = canonical_url.split('/')[-1]
+        # Map common UV IGs to their GitHub repos
+        ig_map = {
+            'ips': 'HL7/fhir-ips',
+            'sdc': 'HL7/sdc',
+            'cda': 'HL7/uv-cda-core',
+            'hl7v2': 'HL7/v2-to-fhir',
+            'v2': 'HL7/v2-to-fhir',
+            'genomics': 'HL7/genomics-reporting',
+            'vaccination': 'HL7/fhir-vaccination',
+        }
+        repo = ig_map.get(ig_name, f'HL7/fhir-{ig_name}')
+        return f"https://build.fhir.org/ig/{repo}/StructureDefinition-{profile_name}.html"
+    
+    # Fallback: return the original URL
+    return canonical_url

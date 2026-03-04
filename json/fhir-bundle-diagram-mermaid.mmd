@@ -1,0 +1,48 @@
+flowchart LR
+    %% Diagnostic Request Bundle
+
+    n8bb8ddd9eeef4d08a44["Observation: 82810-3: Pregnancy status: 77386006: Pregnant"]
+    n4532b55902b1425da71["DocumentReference: 107903-7: Clinical note"]
+    n63a04a786edf41af915["Coverage: PUBLICPOL"]
+    n31a5da61fd3b442aa1d["Encounter: ambulatory"]
+    a2b6c0de2508434baedf["ServiceRequest: 26-870358-1 - Rubella virus antibody screening"]
+    n66036354275c4872bac["Task: fulfill"]
+    n73a87093200a42ffb2e["CommunicationRequest: copyto-report midwife-thorn-brittany"]
+    b758b5fd98644fb79c64["Consent: MHR ❌"]
+    cb64bfe71fb74b0481ae["CommunicationRequest: patient-preference | medium: SMSWRIT ❌"]
+    n0611cefdf9114009856["Task Group: Placer Group 26-870358"]
+
+    %% External References
+    extPatientbelgerreme(["Patient: belger-remedios (external)"])
+    extPractitionerRoles(["PractitionerRole: surgeongeneral-armstrong-amada (external)"])
+    extOrganizationbayvi(["Organization: bayview-pathology (external)"])
+
+    extPatientbelgerreme -->|subject| n8bb8ddd9eeef4d08a44
+    extPatientbelgerreme -->|subject| n4532b55902b1425da71
+    extPractitionerRoles -->|author| n4532b55902b1425da71
+    extPatientbelgerreme -->|subject| n31a5da61fd3b442aa1d
+    extPatientbelgerreme -->|subject| a2b6c0de2508434baedf
+    n31a5da61fd3b442aa1d -->|encounter| a2b6c0de2508434baedf
+    extOrganizationbayvi -->|performer| a2b6c0de2508434baedf
+    extPractitionerRoles -->|requester| a2b6c0de2508434baedf
+    n63a04a786edf41af915 -->|insurance| a2b6c0de2508434baedf
+    n8bb8ddd9eeef4d08a44 -->|supportingInfo| a2b6c0de2508434baedf
+    n4532b55902b1425da71 -->|supportingInfo| a2b6c0de2508434baedf
+    extPractitionerRoles -->|requester| n66036354275c4872bac
+    n0611cefdf9114009856 -->|partOf| n66036354275c4872bac
+    a2b6c0de2508434baedf -->|focus| n66036354275c4872bac
+    extPatientbelgerreme -->|subject| n73a87093200a42ffb2e
+    extPractitionerRoles -->|requester| n73a87093200a42ffb2e
+    extPatientbelgerreme -->|performer| b758b5fd98644fb79c64
+    extOrganizationbayvi -->|organization| b758b5fd98644fb79c64
+    extPatientbelgerreme -->|subject| cb64bfe71fb74b0481ae
+    extPatientbelgerreme -->|requester| cb64bfe71fb74b0481ae
+    extPractitionerRoles -->|requester| n0611cefdf9114009856
+
+    %% Styling for external references
+    classDef externalRef fill:#f0f0f0,stroke:#999,stroke-width:2px,stroke-dasharray: 5 5
+    class extPatientbelgerreme,extPractitionerRoles,extOrganizationbayvi externalRef
+
+    %% Styling for group tasks
+    classDef taskGroup fill:#ffe9a8,stroke:#b07a00,stroke-width:2px
+    class n0611cefdf9114009856 taskGroup

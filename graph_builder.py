@@ -5,7 +5,7 @@ Constructs a directed graph from FHIR resources showing relationships between th
 Adapted from fhir-bundle-viz for use in Patient Dashboard.
 """
 
-from typing import Dict, List, Any, Set, Tuple
+from typing import Dict, List, Any, Set, Tuple, Optional
 from fhir_parser import get_resource_type_display, get_resource_id, is_task_group, get_task_group_label
 
 
@@ -17,10 +17,13 @@ class Graph:
         self.edges: List[Tuple[str, str, str]] = []  # (source_id, target_id, edge_label)
         self.external_refs: Set[str] = set()  # Set of node IDs that are external references
         self.group_tasks: Set[str] = set()  # Set of node IDs that are group Tasks
+        self.node_profiles: Dict[str, List[str]] = {}  # node_id -> list of profile URLs
     
-    def add_node(self, node_id: str, label: str, is_external: bool = False, is_group_task: bool = False):
+    def add_node(self, node_id: str, label: str, is_external: bool = False, is_group_task: bool = False, profiles: Optional[List[str]] = None):
         """Add a node to the graph."""
         self.nodes[node_id] = label
+        if profiles:
+            self.node_profiles[node_id] = profiles
         if is_external:
             self.external_refs.add(node_id)
         if is_group_task:
@@ -43,12 +46,13 @@ def build_graph(resources: Dict[str, Dict[str, Any]]) -> Graph:
     # First pass: Add all nodes for resources in the bundle
     for resource_id, resource_data in resources.items():
         resource = resource_data['resource']
+        profiles = _extract_profiles(resource)
         if is_task_group(resource):
             label = get_task_group_label(resource)
-            graph.add_node(resource_id, label, is_external=False, is_group_task=True)
+            graph.add_node(resource_id, label, is_external=False, is_group_task=True, profiles=profiles)
         else:
             label = get_resource_type_display(resource)
-            graph.add_node(resource_id, label, is_external=False)
+            graph.add_node(resource_id, label, is_external=False, profiles=profiles)
     
     # Second pass: Extract references and create edges
     for resource_id, resource_data in resources.items():
@@ -185,6 +189,13 @@ def _create_external_ref_label(reference: str) -> str:
             return f"{resource_type}: {resource_id} (external)"
     
     return f"{reference} (external)"
+
+
+def _extract_profiles(resource: Dict[str, Any]) -> List[str]:
+    """Extract profile URLs from meta.profile array."""
+    meta = resource.get('meta', {})
+    profiles = meta.get('profile', [])
+    return profiles if isinstance(profiles, list) else []
 
 
 def get_graph_stats(graph: Graph) -> Dict[str, int]:

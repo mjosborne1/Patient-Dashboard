@@ -605,6 +605,11 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
         
         doc_ref = {
             "resourceType": "DocumentReference",
+            "meta": {
+                "profile": [
+                    "http://hl7.org.au/fhir/ereq/StructureDefinition/au-erequesting-clinicalcontext-documentreference"
+                ]
+            },
             "id": doc_ref_id,
             "status": "current",
             "type": {

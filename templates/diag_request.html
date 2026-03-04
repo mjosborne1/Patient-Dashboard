@@ -5,19 +5,8 @@
     pointer-events: auto !important;
 }
 </style>
-<div class="modal fade" id="createDiagnosticRequestModal" tabindex="-1" aria-labelledby="createDiagnosticRequestLabel" aria-hidd        <!-- Copy To (Recipients) -->
-        <div class="mb-3">
-            <label for="copyTo" class="form-label">Copy Results To</label>
-            <select class="form-select" id="copyToList" name="copyTo" multiple
-                    hx-get="/fhir/CopyToPractitioners"
-                    hx-trigger="shown.bs.modal from:#createDiagnosticRequestModal"
-                    hx-target="#copyToList"
-                    hx-swap="outerHTML">
-              <option value="">Select practitioners or specialty to copy results to...</option>
-              <!-- Options will be loaded here by HTMX -->
-            </select>
-            <div class="form-text">Hold Ctrl (or Cmd on Mac) to select multiple practitioners</div>
-        </div><div class="modal-dialog">
+<div class="modal fade" id="createDiagnosticRequestModal" tabindex="-1" aria-labelledby="createDiagnosticRequestLabel" aria-hidden="true">
+<div class="modal-dialog">
     <div class="modal-content">
       <form id="diagnosticRequestForm"
             hx-post="/fhir/diagnosticrequest/bundler/{{ patient.id }}" 
@@ -436,6 +425,7 @@
                 list="copyToPractitionerList"
             >
             <datalist id="copyToPractitionerList"></datalist>
+            <div class="form-text">Hold Ctrl (or Cmd on Mac) to select multiple practitioners</div>
             <div id="copyToPractitioner-indicator" class="htmx-indicator">
                 <small class="text-muted">Searching...</small>
             </div>

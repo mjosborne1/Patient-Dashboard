@@ -400,6 +400,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-primary" onclick="downloadMermaidText()"><i class="fas fa-file-code me-1"></i>Download Mermaid</button>
                         <button type="button" class="btn btn-outline-info" onclick="downloadMermaidSvg()"><i class="fas fa-download me-1"></i>Download SVG</button>
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                     </div>
@@ -426,6 +427,42 @@
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    }
+
+    function downloadMermaidText() {
+        const textarea = document.getElementById('jsonData');
+        if (!textarea || !textarea.value.trim()) {
+            alert('No bundle data to generate Mermaid from.');
+            return;
+        }
+
+        fetch('/bundle/mermaid/download', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: textarea.value
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.blob();
+        })
+        .then(blob => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'fhir-bundle-diagram.mmd';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        })
+        .catch(error => {
+            console.error('Error downloading Mermaid text:', error);
+            alert('Unable to download Mermaid text: ' + error.message);
+        });
     }
 
     function drawMermaidDiagram() {

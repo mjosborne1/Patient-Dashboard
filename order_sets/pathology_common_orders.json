@@ -123,6 +123,30 @@
                 "code": "26604007",
                 "text": "FBC"
             }
+        ],
+        "? MI": [
+            {
+                "code": "105000003",
+                "text": "Troponin"
+            }
+        ],
+        "Reproductive Hormones": [
+            {
+                "code": "270972001",
+                "text": "Serum progesterone"
+            },
+            {
+                "code": "250660006",
+                "text": "Serum FSH/LH"
+            },
+            {
+                "code": "166448005",
+                "text": "Serum oestradiol"
+            },
+            {
+                "code": "711358004",
+                "text": "AMH"
+            }
         ]
     }
 }

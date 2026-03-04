@@ -835,6 +835,17 @@ def get_requester_organisations():
     bundle = response.json()
     entries = bundle.get('entry', [])
     
+    # Count PractitionerRole resources per organization
+    practitioner_role_counts = {}
+    for entry in entries:
+        resource = entry.get('resource', {})
+        if resource.get('resourceType') == 'PractitionerRole':
+            org_ref = resource.get('organization', {}).get('reference', '')
+            if org_ref:
+                # Extract organization ID from reference (format: "Organization/xyz")
+                org_id = org_ref.split('/')[-1] if '/' in org_ref else org_ref
+                practitioner_role_counts[org_id] = practitioner_role_counts.get(org_id, 0) + 1
+    
     # Build a map of unique organisations, filtering out excluded types
     organisations = {}
     for entry in entries:
@@ -865,9 +876,13 @@ def get_requester_organisations():
                         break
             
             if org_id and org_id not in organisations and not is_excluded:
+                # Include practitioner count for badge display
+                practitioner_count = practitioner_role_counts.get(org_id, 0)
+                
                 organisations[org_id] = {
                     "id": org_id,
-                    "name": org_name
+                    "name": org_name,
+                    "count": practitioner_count
                 }
 
     # Sort by name
@@ -1426,6 +1441,35 @@ def generate_bundle_mermaid():
     
     except Exception as e:
         logging.error(f"Error generating mermaid diagram: {str(e)}")
+        return f"Error: {str(e)}", 500
+
+
+@app.route('/bundle/mermaid/download', methods=['POST'])
+def download_bundle_mermaid():
+    """
+    Generate a Mermaid diagram from a FHIR bundle and return it as a downloadable file.
+    Accepts JSON bundle in request body.
+    Returns Mermaid diagram text as attachment.
+    """
+    try:
+        bundle = request.get_json()
+        if not bundle:
+            return "Error: No bundle provided", 400
+
+        resources = extract_resources(bundle)
+        if not resources:
+            return "Error: No resources found in bundle", 400
+
+        graph = build_graph(resources)
+        mermaid_text = generate_mermaid(graph, "Diagnostic Request Bundle")
+
+        response = make_response(mermaid_text)
+        response.headers['Content-Type'] = 'text/plain; charset=utf-8'
+        response.headers['Content-Disposition'] = 'attachment; filename="fhir-bundle-diagram.mmd"'
+        return response
+
+    except Exception as e:
+        logging.error(f"Error downloading mermaid diagram: {str(e)}")
         return f"Error: {str(e)}", 500
 
 

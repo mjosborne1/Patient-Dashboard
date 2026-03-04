@@ -6,6 +6,6 @@
         hx-swap="outerHTML">
   <option value="">Select an organisation...</option>
   {% for org in organisations %}
-    <option value="{{ org.id }}">{{ org.name }}</option>
+    <option value="{{ org.id }}">{{ org.name }}{% if org.count > 0 %} - {{ org.count }}{% endif %}</option>
   {% endfor %}
 </select>

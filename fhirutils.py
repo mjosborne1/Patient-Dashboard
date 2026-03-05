@@ -2,22 +2,35 @@ import os
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 # Internal sentinel: distinguishes "caller didn't pass auth" (use env fallback)
 # from "caller explicitly passed None" (force unauthenticated request).
 _UNSET = object()
 
-def fhir_get(path, fhir_server_url=None, auth_credentials=_UNSET, **kwargs):
+def fhir_get(path, fhir_server_url=None, auth_credentials=_UNSET, bearer_token=None, **kwargs):
     """
-    Wrapper for requests.get that includes FHIR server BASIC auth.
+    Wrapper for requests.get that includes FHIR server auth.
     path: the endpoint path, e.g. '/Patient?_count=10'
     fhir_server_url: full base URL, e.g. 'https://smile.sparked-fhir.com/aucore/fhir/DEFAULT'
     auth_credentials:
       - omitted / _UNSET  → fall back to FHIR_USERNAME/FHIR_PASSWORD env vars
       - tuple (user, pass) → use these credentials
       - None              → explicitly unauthenticated, skip env-var fallback
+    bearer_token: if provided, use Bearer token auth instead of Basic auth
     """
+    base_url = fhir_server_url or os.environ.get('FHIR_SERVER_URL')
+    url = ''
+    if base_url:
+        url = base_url.rstrip('/') + '/' + path.lstrip('/')
+
+    # Bearer token takes priority over Basic auth
+    if bearer_token:
+        headers = kwargs.pop('headers', {})
+        headers['Authorization'] = f'Bearer {bearer_token}'
+        print(f'Attempting get {url} using Bearer token')
+        return requests.get(url, headers=headers, **kwargs)
+
     if auth_credentials is _UNSET:
         # Caller didn't specify — fall back to environment
         env_user = os.environ.get('FHIR_USERNAME')
@@ -26,11 +39,6 @@ def fhir_get(path, fhir_server_url=None, auth_credentials=_UNSET, **kwargs):
     else:
         # None → unauthenticated; tuple → use it
         auth = auth_credentials  # type: ignore[assignment]
-    
-    base_url = fhir_server_url or os.environ.get('FHIR_SERVER_URL')
-    url = ''
-    if base_url:
-        url = base_url.rstrip('/') + '/' + path.lstrip('/')
     
     if auth:
         print(f'Attempting get {url} using auth {auth[0]}:*****')  # Hide password in logs

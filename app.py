@@ -5,8 +5,12 @@ import logging
 from flask_login import LoginManager, AnonymousUserMixin, UserMixin, login_user, logout_user, login_required, current_user
 from datetime import datetime
 import os  # Add os module for environment variables
+import hashlib
+import base64
+import secrets
+from urllib.parse import urlencode, urlparse, parse_qs
 from fhirpathpy import evaluate
-from fhirutils import fhir_get, format_fhir_date, get_text_display, find_category, get_form_data
+from fhirutils import fhir_get as _original_fhir_get, format_fhir_date, get_text_display, find_category, get_form_data
 from bundler import create_request_bundle
 from fhir_parser import extract_resources
 from graph_builder import build_graph
@@ -55,6 +59,20 @@ def auto_login():
     if not current_user.is_authenticated:
         login_user(MockUser())
 
+def get_fhir_bearer_token():
+    """Get Bearer token from request header (preferred) or Flask session."""
+    token = request.headers.get('X-FHIR-Bearer-Token')
+    if not token:
+        token = session.get('smart_access_token')
+    return token
+
+def fhir_get(path, fhir_server_url=None, **kwargs):
+    """Wrapper around fhirutils.fhir_get that automatically injects Bearer token if available."""
+    bearer = get_fhir_bearer_token()
+    if bearer and 'bearer_token' not in kwargs:
+        kwargs['bearer_token'] = bearer
+    return _original_fhir_get(path, fhir_server_url=fhir_server_url, **kwargs)
+
 def get_fhir_server_url():
     # Try to get from custom header (set by frontend from localStorage), fallback to default
     url = request.headers.get('X-FHIR-Server-URL')
@@ -93,6 +111,222 @@ def get_fhir_auth_credentials():
     if env_username and env_password:
         return (env_username, env_password)
     return None
+
+# ── SMART App Launch ─────────────────────────────────────────────────────────
+
+def _generate_pkce():
+    """Generate PKCE code_verifier and code_challenge (S256)."""
+    code_verifier = secrets.token_urlsafe(64)[:128]
+    digest = hashlib.sha256(code_verifier.encode('ascii')).digest()
+    code_challenge = base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
+    return code_verifier, code_challenge
+
+
+@app.route('/smart/discover')
+def smart_discover():
+    """Discover SMART configuration for a FHIR server."""
+    fhir_url = request.args.get('fhir_url') or get_fhir_server_url()
+    try:
+        # Try .well-known/smart-configuration first
+        well_known_url = fhir_url.rstrip('/') + '/.well-known/smart-configuration'
+        logging.info(f"SMART discovery: fetching {well_known_url}")
+        resp = requests.get(well_known_url, timeout=10)
+        if resp.status_code == 200:
+            config = resp.json()
+            return jsonify({
+                'success': True,
+                'config': config,
+                'source': '.well-known/smart-configuration'
+            })
+
+        # Fall back to metadata endpoint
+        metadata_url = fhir_url.rstrip('/') + '/metadata'
+        logging.info(f"SMART discovery: .well-known failed, trying {metadata_url}")
+        resp = requests.get(metadata_url, timeout=10)
+        if resp.status_code == 200:
+            metadata = resp.json()
+            # Extract OAuth URIs from CapabilityStatement
+            security = {}
+            for rest in metadata.get('rest', []):
+                sec = rest.get('security', {})
+                for ext in sec.get('extension', []):
+                    if ext.get('url') == 'http://fhir-registry.smarthealthit.org/StructureDefinition/oauth-uris':
+                        for sub_ext in ext.get('extension', []):
+                            if sub_ext.get('url') == 'authorize':
+                                security['authorization_endpoint'] = sub_ext.get('valueUri')
+                            elif sub_ext.get('url') == 'token':
+                                security['token_endpoint'] = sub_ext.get('valueUri')
+            if security:
+                return jsonify({
+                    'success': True,
+                    'config': security,
+                    'source': 'metadata'
+                })
+
+        return jsonify({'success': False, 'error': 'Could not discover SMART configuration'}), 404
+    except Exception as e:
+        logging.error(f"SMART discovery error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/smart/launch')
+def smart_launch():
+    """Initiate a SMART standalone launch. Redirect user to authorization endpoint."""
+    fhir_url = request.args.get('fhir_url')
+    auth_url = request.args.get('auth_url')
+    client_id = request.args.get('client_id', '')
+    scope = request.args.get('scope',
+        'openid fhirUser offline_access '
+        'user/Patient.rs user/Observation.crs user/Procedure.rs '
+        'user/Immunization.rs user/MedicationRequest.rs user/AllergyIntolerance.rs '
+        'user/ServiceRequest.cruds user/Task.cruds user/Encounter.c '
+        'user/Coverage.c user/Specimen.c user/DocumentReference.c '
+        'user/CommunicationRequest.c user/Consent.c '
+        'user/PractitionerRole.rs user/Practitioner.rs user/Organization.rs'
+    )
+    redirect_uri = request.args.get('redirect_uri') or url_for('smart_callback', _external=True)
+
+    if not fhir_url or not auth_url:
+        return jsonify({'error': 'fhir_url and auth_url are required'}), 400
+
+    # Generate PKCE
+    code_verifier, code_challenge = _generate_pkce()
+
+    # Generate state for CSRF protection
+    state = secrets.token_urlsafe(32)
+
+    # Store in session for callback verification
+    session['smart_pkce_verifier'] = code_verifier
+    session['smart_state'] = state
+    session['smart_fhir_url'] = fhir_url
+    session['smart_redirect_uri'] = redirect_uri
+    session['smart_token_url'] = request.args.get('token_url', '')
+    session['smart_client_id'] = client_id
+
+    # Build authorization URL
+    params = {
+        'response_type': 'code',
+        'client_id': client_id,
+        'scope': scope,
+        'redirect_uri': redirect_uri,
+        'state': state,
+        'aud': fhir_url,
+        'code_challenge': code_challenge,
+        'code_challenge_method': 'S256'
+    }
+
+    authorization_url = auth_url + '?' + urlencode(params)
+    logging.info(f"SMART launch: redirecting to {auth_url}")
+    return redirect(authorization_url)
+
+
+@app.route('/smart/callback')
+def smart_callback():
+    """Handle OAuth2 callback from SMART authorization server."""
+    code = request.args.get('code')
+    state = request.args.get('state')
+    error = request.args.get('error')
+
+    if error:
+        error_desc = request.args.get('error_description', 'Unknown error')
+        logging.error(f"SMART callback error: {error} - {error_desc}")
+        return render_template('index.html', smart_error=f"{error}: {error_desc}")
+
+    # Validate state
+    expected_state = session.get('smart_state')
+    if not state or state != expected_state:
+        logging.error("SMART callback: state mismatch (CSRF)")
+        return render_template('index.html', smart_error="Authorization failed: state mismatch")
+
+    if not code:
+        logging.error("SMART callback: no authorization code received")
+        return render_template('index.html', smart_error="Authorization failed: no code received")
+
+    # Exchange code for token
+    token_url = session.get('smart_token_url')
+    code_verifier = session.get('smart_pkce_verifier')
+    redirect_uri = session.get('smart_redirect_uri')
+    client_id = session.get('smart_client_id', '')
+    fhir_url = session.get('smart_fhir_url')
+
+    if not token_url:
+        return render_template('index.html', smart_error="No token URL found in session")
+
+    token_data = {
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': redirect_uri,
+        'code_verifier': code_verifier,
+        'client_id': client_id
+    }
+
+    try:
+        logging.info(f"SMART token exchange: POST to {token_url}")
+        token_resp = requests.post(token_url, data=token_data, timeout=15)
+
+        if token_resp.status_code != 200:
+            error_body = token_resp.text
+            logging.error(f"SMART token exchange failed: {token_resp.status_code} - {error_body}")
+            return render_template('index.html', smart_error=f"Token exchange failed: {error_body}")
+
+        token_json = token_resp.json()
+        access_token = token_json.get('access_token')
+        patient_id = token_json.get('patient')
+        expires_in = token_json.get('expires_in', 3600)
+        token_type = token_json.get('token_type', 'Bearer')
+        scope_granted = token_json.get('scope', '')
+        id_token = token_json.get('id_token')
+
+        if not access_token:
+            return render_template('index.html', smart_error="No access token in response")
+
+        # Store token in session
+        session['smart_access_token'] = access_token
+        session['smart_patient_id'] = patient_id
+        session['smart_fhir_url'] = fhir_url
+        session['smart_token_type'] = token_type
+        session['smart_scope'] = scope_granted
+        session['smart_expires_in'] = expires_in
+
+        logging.info(f"SMART auth successful. Patient: {patient_id}, Scope: {scope_granted}")
+
+        # Clean up PKCE/state from session
+        session.pop('smart_pkce_verifier', None)
+        session.pop('smart_state', None)
+
+        # Redirect to main page with token info passed as fragment for JS to pick up
+        # This lets the frontend store the token in localStorage
+        return redirect(url_for('index') + f'#smart_token={access_token}&smart_patient={patient_id or ""}&smart_fhir_url={fhir_url or ""}')
+
+    except Exception as e:
+        logging.error(f"SMART token exchange error: {e}")
+        return render_template('index.html', smart_error=f"Token exchange error: {str(e)}")
+
+
+@app.route('/smart/token-status')
+def smart_token_status():
+    """Check status of current SMART token."""
+    token = session.get('smart_access_token')
+    return jsonify({
+        'has_token': bool(token),
+        'patient_id': session.get('smart_patient_id'),
+        'fhir_url': session.get('smart_fhir_url'),
+        'scope': session.get('smart_scope'),
+        'token_type': session.get('smart_token_type')
+    })
+
+
+@app.route('/smart/logout', methods=['POST'])
+def smart_logout():
+    """Clear SMART session tokens."""
+    session.pop('smart_access_token', None)
+    session.pop('smart_patient_id', None)
+    session.pop('smart_fhir_url', None)
+    session.pop('smart_token_type', None)
+    session.pop('smart_scope', None)
+    session.pop('smart_expires_in', None)
+    return jsonify({'success': True})
+
 
 @app.route('/')
 def index():

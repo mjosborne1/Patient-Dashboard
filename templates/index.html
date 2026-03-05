@@ -315,16 +315,54 @@
         }
     </script>
     <script>
+        // ── SMART token pickup from URL fragment (after OAuth callback) ──────────
+        (function() {
+            const hash = window.location.hash;
+            if (hash && hash.includes('smart_token=')) {
+                const params = new URLSearchParams(hash.substring(1));
+                const token = params.get('smart_token');
+                const patientId = params.get('smart_patient');
+                const fhirUrl = params.get('smart_fhir_url');
+                if (token) {
+                    localStorage.setItem('smart_access_token', token);
+                    localStorage.setItem('fhirAuthMode', 'smart');
+                    if (patientId) localStorage.setItem('smart_patient_id', patientId);
+                    if (fhirUrl) localStorage.setItem('fhir_server_url', fhirUrl);
+                    console.log('[SMART] Token received and stored. Patient:', patientId);
+                }
+                // Clean up URL fragment
+                history.replaceState(null, '', window.location.pathname);
+            }
+        })();
+
         // Global HTMX configuration to add FHIR server URL and auth headers to all requests
         document.body.addEventListener('htmx:configRequest', function(evt) {
             const fhirServerUrl = localStorage.getItem('fhir_server_url');
             if (fhirServerUrl) {
                 evt.detail.headers['X-FHIR-Server-URL'] = fhirServerUrl;
             }
-            
-            // Add auth credentials if available
-            const useAuth = localStorage.getItem('useFhirAuth') === 'true';
-            if (useAuth) {
+
+            const authMode = localStorage.getItem('fhirAuthMode') || 'none';
+
+            if (authMode === 'basic') {
+                // Basic Auth
+                const username = localStorage.getItem('fhirUsername');
+                const password = localStorage.getItem('fhirPassword');
+                if (username && password) {
+                    evt.detail.headers['X-FHIR-Username'] = username;
+                    evt.detail.headers['X-FHIR-Password'] = password;
+                }
+            } else if (authMode === 'smart') {
+                // SMART Bearer Token
+                const token = localStorage.getItem('smart_access_token');
+                if (token) {
+                    evt.detail.headers['X-FHIR-Bearer-Token'] = token;
+                }
+            }
+            // 'none' mode: no auth headers sent
+
+            // Support legacy useFhirAuth setting (migrate on next settings save)
+            if (!localStorage.getItem('fhirAuthMode') && localStorage.getItem('useFhirAuth') === 'true') {
                 const username = localStorage.getItem('fhirUsername');
                 const password = localStorage.getItem('fhirPassword');
                 if (username && password) {

@@ -1,6 +1,6 @@
 <!-- Modal for FHIR Server Settings -->
 <div class="modal fade" id="fhirServerModal" tabindex="-1" aria-labelledby="fhirServerModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <form id="fhirServerSettingsForm">
         <div class="modal-header">
@@ -12,26 +12,102 @@
             <label for="fhirServerUrlInput" class="form-label">FHIR Server URL</label>
             <input type="text" class="form-control" id="fhirServerUrlInput" value="https://smile.sparked-fhir.com/aucore/fhir/DEFAULT">
           </div>
+
+          <!-- Auth Mode Selection -->
           <div class="mb-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="useAuthCheckbox">
-              <label class="form-check-label" for="useAuthCheckbox">
-                Use Authentication?
-              </label>
+            <label class="form-label fw-semibold">Authentication Mode</label>
+            <div class="d-flex gap-3">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="authMode" id="authModeNone" value="none" checked>
+                <label class="form-check-label" for="authModeNone">No Auth</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="authMode" id="authModeBasic" value="basic">
+                <label class="form-check-label" for="authModeBasic">Basic Auth</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="authMode" id="authModeSmart" value="smart">
+                <label class="form-check-label" for="authModeSmart">SMART App Launch</label>
+              </div>
             </div>
           </div>
-          <div class="mb-3 auth-fields" style="display:none;">
-            <label for="fhirUsernameInput" class="form-label">FHIR Username</label>
-            <input type="text" class="form-control" id="fhirUsernameInput" autocomplete="username">
+
+          <!-- Basic Auth Fields -->
+          <div id="basicAuthFields" style="display:none;">
+            <div class="mb-3">
+              <label for="fhirUsernameInput" class="form-label">FHIR Username</label>
+              <input type="text" class="form-control" id="fhirUsernameInput" autocomplete="username">
+            </div>
+            <div class="mb-3">
+              <label for="fhirPasswordInput" class="form-label">FHIR Password</label>
+              <input type="password" class="form-control" id="fhirPasswordInput" autocomplete="current-password">
+            </div>
           </div>
-          <div class="mb-3 auth-fields" style="display:none;">
-            <label for="fhirPasswordInput" class="form-label">FHIR Password</label>
-            <input type="password" class="form-control" id="fhirPasswordInput" autocomplete="current-password">
+
+          <!-- SMART App Launch Fields -->
+          <div id="smartAuthFields" style="display:none;">
+            <div class="card border-info mb-3">
+              <div class="card-body">
+                <p class="card-text small text-muted mb-2">
+                  SMART App Launch uses OAuth 2.0 with PKCE for secure authorization.
+                  The app will discover the authorization endpoints from the FHIR server automatically.
+                </p>
+                <div class="mb-3">
+                  <label for="smartClientId" class="form-label">Client ID</label>
+                  <input type="text" class="form-control" id="smartClientId" placeholder="e.g. my-patient-dashboard">
+                  <div class="form-text">Public client ID registered with the authorization server.</div>
+                </div>
+                <div class="mb-3">
+                  <label for="smartScopes" class="form-label">Scopes</label>
+                  <input type="text" class="form-control" id="smartScopes" 
+                         value="launch/patient openid fhirUser patient/*.rs offline_access">
+                  <div class="form-text">Space-separated SMART scopes to request.</div>
+                </div>
+
+                <!-- Discovery status -->
+                <div id="smartDiscoveryStatus" class="mb-3" style="display:none;">
+                  <div class="alert alert-info py-2 mb-0 small" id="smartDiscoveryMsg">
+                    <i class="fas fa-spinner fa-spin me-1"></i> Discovering SMART configuration...
+                  </div>
+                </div>
+
+                <!-- SMART Token Status -->
+                <div id="smartTokenStatus" style="display:none;">
+                  <div class="alert py-2 mb-2 small" id="smartTokenMsg"></div>
+                </div>
+
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-info btn-sm" id="smartDiscoverBtn" onclick="smartDiscover()">
+                    <i class="fas fa-search me-1"></i>Discover Endpoints
+                  </button>
+                  <button type="button" class="btn btn-primary btn-sm" id="smartLaunchBtn" onclick="smartLaunch()" disabled>
+                    <i class="fas fa-rocket me-1"></i>Launch Authorization
+                  </button>
+                  <button type="button" class="btn btn-outline-danger btn-sm" id="smartLogoutBtn" onclick="smartLogout()" style="display:none;">
+                    <i class="fas fa-sign-out-alt me-1"></i>Clear Token
+                  </button>
+                </div>
+
+                <!-- Discovered endpoints (read-only) -->
+                <div id="smartEndpoints" style="display:none;" class="mt-3">
+                  <div class="mb-2">
+                    <label class="form-label small text-muted mb-0">Authorization Endpoint</label>
+                    <input type="text" class="form-control form-control-sm" id="smartAuthUrl" readonly>
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label small text-muted mb-0">Token Endpoint</label>
+                    <input type="text" class="form-control form-control-sm" id="smartTokenUrl" readonly>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="submit" class="btn btn-primary">Save Settings</button>
-          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Settings</button>
+        </div>
       </form>
     </div>
   </div>
@@ -39,54 +115,198 @@
 
 
 <script>
-// Show/hide auth fields based on checkbox
-document.getElementById('useAuthCheckbox').addEventListener('change', function() {
-  const show = this.checked;
-  document.querySelectorAll('.auth-fields').forEach(el => {
-    el.style.display = show ? '' : 'none';
-  });
+// ── Auth mode toggle ─────────────────────────────────────────────────────────
+function updateAuthModeUI() {
+  const mode = document.querySelector('input[name="authMode"]:checked').value;
+  document.getElementById('basicAuthFields').style.display = mode === 'basic' ? '' : 'none';
+  document.getElementById('smartAuthFields').style.display = mode === 'smart' ? '' : 'none';
+}
+
+document.querySelectorAll('input[name="authMode"]').forEach(radio => {
+  radio.addEventListener('change', updateAuthModeUI);
 });
 
-// Save settings to localStorage and reload page or update JS variables
+// ── SMART Discovery ──────────────────────────────────────────────────────────
+async function smartDiscover() {
+  const fhirUrl = document.getElementById('fhirServerUrlInput').value.trim();
+  if (!fhirUrl) { alert('Enter a FHIR Server URL first.'); return; }
+
+  const statusDiv = document.getElementById('smartDiscoveryStatus');
+  const msgDiv = document.getElementById('smartDiscoveryMsg');
+  statusDiv.style.display = '';
+  msgDiv.className = 'alert alert-info py-2 mb-0 small';
+  msgDiv.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Discovering SMART configuration...';
+  document.getElementById('smartLaunchBtn').disabled = true;
+
+  try {
+    const resp = await fetch(`/smart/discover?fhir_url=${encodeURIComponent(fhirUrl)}`);
+    const data = await resp.json();
+
+    if (data.success) {
+      const config = data.config;
+      const authUrl = config.authorization_endpoint || '';
+      const tokenUrl = config.token_endpoint || '';
+
+      document.getElementById('smartAuthUrl').value = authUrl;
+      document.getElementById('smartTokenUrl').value = tokenUrl;
+      document.getElementById('smartEndpoints').style.display = '';
+
+      // Store discovered URLs
+      localStorage.setItem('smart_auth_url', authUrl);
+      localStorage.setItem('smart_token_url', tokenUrl);
+
+      msgDiv.className = 'alert alert-success py-2 mb-0 small';
+      msgDiv.innerHTML = `<i class="fas fa-check-circle me-1"></i> SMART endpoints discovered (${data.source})`;
+      document.getElementById('smartLaunchBtn').disabled = false;
+    } else {
+      msgDiv.className = 'alert alert-warning py-2 mb-0 small';
+      msgDiv.innerHTML = `<i class="fas fa-exclamation-triangle me-1"></i> ${data.error || 'Discovery failed'}`;
+    }
+  } catch (e) {
+    msgDiv.className = 'alert alert-danger py-2 mb-0 small';
+    msgDiv.innerHTML = `<i class="fas fa-times-circle me-1"></i> Error: ${e.message}`;
+  }
+}
+
+// ── SMART Launch ─────────────────────────────────────────────────────────────
+function smartLaunch() {
+  const fhirUrl = document.getElementById('fhirServerUrlInput').value.trim();
+  const authUrl = document.getElementById('smartAuthUrl').value.trim();
+  const tokenUrl = document.getElementById('smartTokenUrl').value.trim();
+  const clientId = document.getElementById('smartClientId').value.trim();
+  const scopes = document.getElementById('smartScopes').value.trim();
+
+  if (!fhirUrl || !authUrl) {
+    alert('Please discover SMART endpoints first.');
+    return;
+  }
+  if (!clientId) {
+    alert('Please enter a Client ID.');
+    return;
+  }
+
+  // Save settings before launching
+  localStorage.setItem('fhir_server_url', fhirUrl);
+  localStorage.setItem('fhirAuthMode', 'smart');
+  localStorage.setItem('smart_client_id', clientId);
+  localStorage.setItem('smart_scopes', scopes);
+  localStorage.setItem('smart_auth_url', authUrl);
+  localStorage.setItem('smart_token_url', tokenUrl);
+
+  // Build launch URL
+  const params = new URLSearchParams({
+    fhir_url: fhirUrl,
+    auth_url: authUrl,
+    token_url: tokenUrl,
+    client_id: clientId,
+    scope: scopes
+  });
+
+  window.location.href = '/smart/launch?' + params.toString();
+}
+
+// ── SMART Logout ─────────────────────────────────────────────────────────────
+async function smartLogout() {
+  try {
+    await fetch('/smart/logout', { method: 'POST' });
+  } catch (e) { /* ignore */ }
+  localStorage.removeItem('smart_access_token');
+  localStorage.removeItem('smart_patient_id');
+  updateSmartTokenUI();
+  location.reload();
+}
+
+// ── Update SMART Token UI ────────────────────────────────────────────────────
+function updateSmartTokenUI() {
+  const token = localStorage.getItem('smart_access_token');
+  const tokenStatusDiv = document.getElementById('smartTokenStatus');
+  const tokenMsg = document.getElementById('smartTokenMsg');
+  const logoutBtn = document.getElementById('smartLogoutBtn');
+
+  if (token) {
+    const patientId = localStorage.getItem('smart_patient_id') || 'unknown';
+    tokenStatusDiv.style.display = '';
+    tokenMsg.className = 'alert alert-success py-2 mb-2 small';
+    tokenMsg.innerHTML = `<i class="fas fa-check-circle me-1"></i> Authenticated` +
+      (patientId && patientId !== 'undefined' && patientId !== '' ? ` &mdash; Patient: <strong>${patientId}</strong>` : '');
+    logoutBtn.style.display = '';
+  } else {
+    tokenStatusDiv.style.display = 'none';
+    logoutBtn.style.display = 'none';
+  }
+}
+
+// ── Save settings ────────────────────────────────────────────────────────────
 document.getElementById('fhirServerSettingsForm').addEventListener('submit', function(e) {
   e.preventDefault();
   const url = document.getElementById('fhirServerUrlInput').value;
-  const useAuth = document.getElementById('useAuthCheckbox').checked;
-  const username = document.getElementById('fhirUsernameInput').value.trim();
-  const password = document.getElementById('fhirPasswordInput').value.trim();
+  const authMode = document.querySelector('input[name="authMode"]:checked').value;
 
   localStorage.setItem('fhir_server_url', url);
-  localStorage.setItem('useFhirAuth', useAuth ? 'true' : 'false');
+  localStorage.setItem('fhirAuthMode', authMode);
 
-  if (useAuth) {
-    if (username) {
-      localStorage.setItem('fhirUsername', username);
-    } else {
-      localStorage.removeItem('fhirUsername');
-    }
-    if (password) {
-      localStorage.setItem('fhirPassword', password);
-    } else {
-      localStorage.removeItem('fhirPassword');
-    }
+  // Clear old auth format
+  localStorage.removeItem('useFhirAuth');
+
+  if (authMode === 'basic') {
+    const username = document.getElementById('fhirUsernameInput').value.trim();
+    const password = document.getElementById('fhirPasswordInput').value.trim();
+    if (username) localStorage.setItem('fhirUsername', username);
+    else localStorage.removeItem('fhirUsername');
+    if (password) localStorage.setItem('fhirPassword', password);
+    else localStorage.removeItem('fhirPassword');
   } else {
     localStorage.removeItem('fhirUsername');
     localStorage.removeItem('fhirPassword');
   }
 
+  if (authMode === 'smart') {
+    localStorage.setItem('smart_client_id', document.getElementById('smartClientId').value.trim());
+    localStorage.setItem('smart_scopes', document.getElementById('smartScopes').value.trim());
+  }
+
   location.reload();
 });
 
-// Populate fields from localStorage each time the modal opens
+// ── Populate fields on modal open ────────────────────────────────────────────
 document.getElementById('fhirServerModal').addEventListener('show.bs.modal', function() {
   const savedUrl = localStorage.getItem('fhir_server_url');
   document.getElementById('fhirServerUrlInput').value = savedUrl || 'https://smile.sparked-fhir.com/aucore/fhir/DEFAULT';
-  const useAuth = localStorage.getItem('useFhirAuth') === 'true';
-  document.getElementById('useAuthCheckbox').checked = useAuth;
-  document.querySelectorAll('.auth-fields').forEach(el => {
-    el.style.display = useAuth ? '' : 'none';
-  });
-  document.getElementById('fhirUsernameInput').value = (useAuth && localStorage.getItem('fhirUsername')) || '';
-  document.getElementById('fhirPasswordInput').value = (useAuth && localStorage.getItem('fhirPassword')) || '';
+
+  // Determine auth mode (support legacy useFhirAuth)
+  let authMode = localStorage.getItem('fhirAuthMode');
+  if (!authMode) {
+    // Migrate from old checkbox-based setting
+    const legacyUseAuth = localStorage.getItem('useFhirAuth') === 'true';
+    authMode = legacyUseAuth ? 'basic' : 'none';
+  }
+
+  // Set radio button
+  const radio = document.querySelector(`input[name="authMode"][value="${authMode}"]`);
+  if (radio) radio.checked = true;
+  updateAuthModeUI();
+
+  // Basic auth fields
+  document.getElementById('fhirUsernameInput').value = localStorage.getItem('fhirUsername') || '';
+  document.getElementById('fhirPasswordInput').value = localStorage.getItem('fhirPassword') || '';
+
+  // SMART fields
+  document.getElementById('smartClientId').value = localStorage.getItem('smart_client_id') || '';
+  document.getElementById('smartScopes').value = localStorage.getItem('smart_scopes') || 'launch/patient openid fhirUser patient/*.rs offline_access';
+
+  // Restore discovered endpoints
+  const savedAuthUrl = localStorage.getItem('smart_auth_url');
+  const savedTokenUrl = localStorage.getItem('smart_token_url');
+  if (savedAuthUrl || savedTokenUrl) {
+    document.getElementById('smartAuthUrl').value = savedAuthUrl || '';
+    document.getElementById('smartTokenUrl').value = savedTokenUrl || '';
+    document.getElementById('smartEndpoints').style.display = '';
+    document.getElementById('smartLaunchBtn').disabled = false;
+  } else {
+    document.getElementById('smartEndpoints').style.display = 'none';
+    document.getElementById('smartLaunchBtn').disabled = true;
+  }
+
+  updateSmartTokenUI();
 });
 </script>

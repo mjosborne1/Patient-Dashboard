@@ -143,18 +143,30 @@ function getFhirHeaders() {
         'Content-Type': 'application/json'
     };
     
-    const serverUrl = localStorage.getItem('fhirServerUrl');
-    const username = localStorage.getItem('fhirUsername');
-    const password = localStorage.getItem('fhirPassword');
-    
+    const serverUrl = localStorage.getItem('fhir_server_url') || localStorage.getItem('fhirServerUrl');
     if (serverUrl) headers['X-FHIR-Server-URL'] = serverUrl;
-    if (username) headers['X-FHIR-Username'] = username;
-    if (password) headers['X-FHIR-Password'] = password;
+
+    const authMode = localStorage.getItem('fhirAuthMode') || 'none';
+    if (authMode === 'basic') {
+        const username = localStorage.getItem('fhirUsername');
+        const password = localStorage.getItem('fhirPassword');
+        if (username) headers['X-FHIR-Username'] = username;
+        if (password) headers['X-FHIR-Password'] = password;
+    } else if (authMode === 'smart') {
+        const token = localStorage.getItem('smart_access_token');
+        if (token) headers['X-FHIR-Bearer-Token'] = token;
+    }
+    // Legacy support
+    if (!localStorage.getItem('fhirAuthMode')) {
+        const username = localStorage.getItem('fhirUsername');
+        const password = localStorage.getItem('fhirPassword');
+        if (username) headers['X-FHIR-Username'] = username;
+        if (password) headers['X-FHIR-Password'] = password;
+    }
     
     console.log('FHIR Headers being sent:', {
         'X-FHIR-Server-URL': serverUrl ? '***set***' : 'not set',
-        'X-FHIR-Username': username ? '***set***' : 'not set',
-        'X-FHIR-Password': password ? '***set***' : 'not set'
+        'Auth-Mode': authMode
     });
     
     return headers;

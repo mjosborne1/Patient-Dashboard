@@ -436,7 +436,7 @@ function loadTasks() {
             }
             
             const tasks = data.tasks || [];
-            const groupTasks = data.groupTasks || [];
+            let groupTasks = data.groupTasks || [];
             currentTasks = {};
             const totalCount = data.totalCount || 0;
             
@@ -444,6 +444,12 @@ function loadTasks() {
             if (groupTasks.length > 0) {
                 console.log(`[DEBUG ${callTimestamp}] Sample groupTask:`, groupTasks[0]);
             }
+            
+            // Filter out tasks with CommunicationRequest focus
+            groupTasks = groupTasks.filter(task => {
+                const focusType = task.focus?.resourceType || task.focus?.type;
+                return focusType !== 'CommunicationRequest';
+            });
             
             if (tasks.length === 0 && groupTasks.length === 0) {
                 container.innerHTML = '<div class="alert alert-info m-3">No requested tasks found for this organisation.</div>';
@@ -821,37 +827,64 @@ function showDetails(taskId) {
     // Build individual tasks display
     let testsHtml = '';
     if (task.childTasks && task.childTasks.length > 0) {
+        // Filter out child tasks with CommunicationRequest focus
+        const filteredChildren = task.childTasks.filter(child => {
+            // Check focus type
+            const focusType = child.focus?.resourceType || child.focus?.type;
+            if (focusType === 'CommunicationRequest') {
+                console.log('Filtering out child task with CommunicationRequest focus:', child.id);
+                return false;
+            }
+            
+            // Also check if task ID contains 'communicationrequest' as fallback
+            if (child.id && child.id.toLowerCase().includes('communicationrequest')) {
+                console.log('Filtering out child task with communicationrequest in ID:', child.id);
+                return false;
+            }
+            
+            // Log what we're keeping to help debug
+            console.log('Keeping child task:', child.id, 'focusType:', focusType);
+            return true;
+        });
+        
         // Sort by displaySequence if available
-        const sortedChildren = [...task.childTasks].sort((a, b) => {
+        const sortedChildren = [...filteredChildren].sort((a, b) => {
             const seqA = a.displaySequence ?? 999;
             const seqB = b.displaySequence ?? 999;
             return seqA - seqB;
         });
         
-        // Display individual child tasks with their code displays
-        testsHtml = '<table class="table table-sm table-bordered mt-2"><thead><tr><th>Seq#</th><th>PON</th><th>Test</th><th>Priority</th><th>Authored</th><th>Status</th></tr></thead><tbody>';
-        sortedChildren.forEach(child => {
-            const childStatus = child.status || 'unknown';
-            const statusBadge = `<span class="badge bg-${getStatusBadgeColor(childStatus)}">${escapeHtml(childStatus)}</span>`;
-            const seqDisplay = child.displaySequence != null ? child.displaySequence : '-';
-            const ponDisplay = child.placerOrderNumber ? escapeHtml(child.placerOrderNumber) : '-';
-            const authoredOn = child.authoredOn ? new Date(child.authoredOn).toLocaleDateString() : '-';
-            const childPriority = child.priority || 'routine';
-            const priorityBadge = `<span class="badge bg-${getPriorityBadgeColor(childPriority)}">${escapeHtml(childPriority)}</span>`;
-            testsHtml += `
-                <tr>
-                    <td>${seqDisplay}</td>
-                    <td><small>${ponDisplay}</small></td>
-                    <td>${escapeHtml(child.codeDisplay || 'No test specified')}</td>
-                    <td>${priorityBadge}</td>
-                    <td><small>${authoredOn}</small></td>
-                    <td>${statusBadge}</td>
-                </tr>
-            `;
-        });
-        testsHtml += '</tbody></table>';
-    } else {
-        // Fallback to codes array display
+        // Display individual child tasks with their code displays (only if there are filtered children)
+        if (filteredChildren.length > 0) {
+            testsHtml = '<table class="table table-sm table-bordered mt-2"><thead><tr><th>Seq#</th><th>PON</th><th>Test</th><th>Priority</th><th>Authored</th><th>Status</th></tr></thead><tbody>';
+            sortedChildren.forEach(child => {
+                const childStatus = child.status || 'unknown';
+                const statusBadge = `<span class="badge bg-${getStatusBadgeColor(childStatus)}">${escapeHtml(childStatus)}</span>`;
+                const seqDisplay = child.displaySequence != null ? child.displaySequence : '-';
+                const ponDisplay = child.placerOrderNumber ? escapeHtml(child.placerOrderNumber) : '-';
+                const authoredOn = child.authoredOn ? new Date(child.authoredOn).toLocaleDateString() : '-';
+                const childPriority = child.priority || 'routine';
+                const priorityBadge = `<span class="badge bg-${getPriorityBadgeColor(childPriority)}">${escapeHtml(childPriority)}</span>`;
+                testsHtml += `
+                    <tr>
+                        <td>${seqDisplay}</td>
+                        <td><small>${ponDisplay}</small></td>
+                        <td>${escapeHtml(child.codeDisplay || 'No test specified')}</td>
+                        <td>${priorityBadge}</td>
+                        <td><small>${authoredOn}</small></td>
+                        <td>${statusBadge}</td>
+                    </tr>
+                `;
+            });
+            testsHtml += '</tbody></table>';
+        } else {
+            // No child tasks after filtering - fall through to fallback display
+            testsHtml = '';
+        }
+    }
+    
+    // Fallback to codes array display if no child tasks table was created
+    if (!testsHtml) {
         const codes = Array.isArray(sr.codes) ? sr.codes.filter(Boolean) : [];
         const fallbackDisplay = sr.code || sr.description || '';
         const displays = codes.length ? codes : (fallbackDisplay ? [fallbackDisplay] : []);

@@ -208,14 +208,14 @@ thead.table-dark {
 }
 
 .main-content {
-    margin-left: 70px;
+    margin-left: 200px;
     transition: margin-left 0.3s ease-in-out;
     padding: 20px;
 }
 
 header.with-sidebar {
-    margin-left: 70px;
-    width: calc(100% - 70px);
+    margin-left: 200px;
+    width: calc(100% - 200px);
     position: fixed;
     top: 0;
     z-index: 99;

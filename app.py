@@ -351,6 +351,7 @@ def test_datalist():
 # SNOMED CT codes
 ALLOWED_SPECIALTY_SNOMED_CODES = {
     '394603008',      # Clinical immunology/allergy
+    '408455009',      # Interventional radiology - speciality
     '394593009',      # Clinical oncology
     '24251000087109', # Occupational medicine
     '394579002',      # Emergency medicine
@@ -360,7 +361,10 @@ ALLOWED_SPECIALTY_SNOMED_CODES = {
     '394581000',      # Cardiothoracic surgery
     '394592004',      # Clinical haematology
     '394802001',      # General medicine
+    '408443003',      # General Medicine Practice
     '419772000',      # Family practice
+    '394583002',      # Endocrinololgy
+    '394649004'       # Nuclear Medicine
 }
 
 # ABS ANZSCO codes (Australian and New Zealand Standard Classification of Occupations)
@@ -1644,6 +1648,55 @@ def create_diagnostic_request_bundle(patient_id):
     bundle = create_request_bundle(form_data=form_data, fhir_server_url=get_fhir_server_url(), auth_credentials=get_fhir_auth_credentials())
     bundle_json = json.dumps(bundle, indent=2)
     return render_template('partials/json_textarea.html', bundle_json=bundle_json), 200
+
+
+@app.route('/fhir/bundle/submit', methods=['POST'])
+def submit_bundle():
+    """POST a FHIR Bundle (transaction/batch) to the connected FHIR server."""
+    try:
+        bundle = request.get_json()
+        if not bundle:
+            return jsonify({'success': False, 'error': 'No JSON body provided'}), 400
+
+        if bundle.get('resourceType') != 'Bundle':
+            return jsonify({'success': False, 'error': 'JSON is not a FHIR Bundle'}), 400
+
+        server_url = get_fhir_server_url().rstrip('/')
+        auth_creds = get_fhir_auth_credentials()
+        bearer = get_fhir_bearer_token()
+
+        headers = {
+            'Content-Type': 'application/fhir+json',
+            'Accept': 'application/fhir+json'
+        }
+
+        kwargs = {'headers': headers, 'json': bundle, 'timeout': 30}
+        if bearer:
+            headers['Authorization'] = f'Bearer {bearer}'
+        elif auth_creds:
+            kwargs['auth'] = auth_creds
+
+        logging.info(f"Submitting Bundle ({bundle.get('type', 'unknown')}) to {server_url}")
+        resp = requests.post(server_url, **kwargs)
+
+        try:
+            resp_json = resp.json()
+        except Exception:
+            resp_json = {'raw': resp.text[:2000]}
+
+        success = 200 <= resp.status_code < 300
+        result = {
+            'success': success,
+            'http_status': resp.status_code,
+            'response': resp_json
+        }
+        if not success:
+            result['error'] = f"FHIR server returned HTTP {resp.status_code}"
+        return jsonify(result), 200
+
+    except Exception as e:
+        logging.error(f"Bundle submit error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/bundle/mermaid', methods=['POST'])

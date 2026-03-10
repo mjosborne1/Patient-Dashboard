@@ -64,10 +64,11 @@
           <!-- Provider Organisation Dropdown (shown/updated based on Request Category) -->
           <div class="mb-3" id="providerDropdownContainer">
             <label for="organisationList" class="form-label">Select Provider Organisation</label>
-            <select class="form-select" id="organisationList" name="organisation">
+            <select class="form-select" id="organisationList" name="organisation" onchange="document.getElementById('organisationName').value = this.selectedOptions[0]?.text?.trim() || ''">
               <option value="">Select an provider...</option>
               <!-- Options will be loaded here by HTMX -->
             </select>
+            <input type="hidden" id="organisationName" name="organisationName" value="">
           </div>
           <!-- Common Order Sets -->
           <div class="mb-3" id="commonOrderSetsContainer">
@@ -482,7 +483,7 @@ function renderSelectedTests() {
                 <small class="text-muted"><strong>Selected Tests (${window.selectedTests.length}):</strong></small>
             </div>
             ${window.selectedTests.map((test, idx) => {
-                const testDisplay = typeof test === 'string' ? test : test.display;
+                const testDisplay = typeof test === 'string' ? test : (test.text || test.display);
                 const testCode = typeof test === 'string' ? '' : test.code;
                 const codeDisplay = testCode ? ` <small class="text-white-50">(${testCode})</small>` : '';
                 const ariaLabel = testCode ? `${testDisplay} (${testCode})` : testDisplay;
@@ -550,15 +551,17 @@ function applyOrderSet(setName) {
     let added = 0, skipped = 0;
     tests.forEach(t => {
         const code = t.code || '';
-        const display = t.text || t.display || '';
-        if (!display) return;
+        const snomedDisplay = t.display || '';
+        const shortText = t.text || snomedDisplay || '';
+        if (!shortText) return;
         const already = window.selectedTests.find(x =>
-            (typeof x === 'string' ? x : x.display) === display
+            (typeof x === 'string' ? x : (x.text || x.display)) === shortText
         );
         if (!already) {
             window.selectedTests.push({
                 code,
-                display,
+                display: snomedDisplay,
+                text: shortText,
                 display_sequence: window.selectedTests.length + 1
             });
             added++;
@@ -1722,6 +1725,12 @@ document.body.addEventListener('htmx:afterSwap', function(evt) {
             if (orgList.options.length === 0) {
                 console.error('[DEBUG] WARNING: Organisation dropdown is empty after swap!');
             }
+            // Re-attach onchange to sync the hidden organisationName field
+            orgList.onchange = function() {
+                document.getElementById('organisationName').value = this.selectedOptions[0]?.text?.trim() || '';
+            };
+            // Reset org name since selection was cleared by swap
+            document.getElementById('organisationName').value = '';
         } else {
             console.error('[DEBUG] ERROR: Organisation list not found after swap!');
         }
@@ -1779,6 +1788,15 @@ document.getElementById('testName').addEventListener('htmx:beforeSwap', function
         evt.detail.shouldSwap = false;
         const dropdown = document.getElementById('testNameDropdown');
         if (dropdown) dropdown.style.display = 'none';
+    }
+});
+
+// Sync organisation name hidden field before form submission
+document.getElementById('diagnosticRequestForm').addEventListener('htmx:configRequest', function(evt) {
+    const orgSelect = document.getElementById('organisationList');
+    const orgNameField = document.getElementById('organisationName');
+    if (orgSelect && orgNameField && orgSelect.selectedIndex > 0) {
+        orgNameField.value = orgSelect.options[orgSelect.selectedIndex].text.trim();
     }
 });
 

@@ -3,149 +3,182 @@
         "Cardiovascular risk": [
             {
                 "code": "252150008",
-                "text": "Fasting Lipids"
+                "text": "Fasting Lipids",
+                "display": "Fasting lipid profile"
             },
             {
                 "code": "43396009",
-                "text": "HbA1c"
+                "text": "HbA1c",
+                "display": "Haemoglobin A1c measurement"
             },
             {
                 "code": "444164000",
-                "text": "UEC"
+                "text": "UEC",
+                "display": "Urea, electrolytes and creatinine measurement"
             },
             {
                 "code": "26604007",
-                "text": "FBC"
+                "text": "FBC",
+                "display": "Full blood count"
             }
         ],
         "Diabetes monitoring": [
             {
                 "code": "43396009",
-                "text": "HbA1c"
+                "text": "HbA1c",
+                "display": "Haemoglobin A1c measurement"
             },
             {
                 "code": "444164000",
-                "text": "UEC"
+                "text": "UEC",
+                "display": "Urea, electrolytes and creatinine measurement"
             },
             {
                 "code": "252150008",
-                "text": "Fasting Lipids"
+                "text": "Fasting Lipids",
+                "display": "Fasting lipid profile"
             },
             {
                 "code": "26604007",
-                "text": "FBC"
+                "text": "FBC",
+                "display": "Full blood count"
             },
             {
                 "code": "167271000",
-                "text": "Urine microalbumin/creatinine ratio"
+                "text": "Urine microalbumin/creatinine ratio",
+                "display": "Urine protein test"
             },
             {
                 "code": "271062006",
-                "text": "Fasting Blood Glucose"
+                "text": "Fasting Blood Glucose",
+                "display": "Fasting blood glucose measurement"
             }
         ],
         "Female over 50": [
             {
                 "code": "26604007",
-                "text": "FBC"
+                "text": "FBC",
+                "display": "Full blood count"
             },
             {
                 "code": "444164000",
-                "text": "UEC"
+                "text": "UEC",
+                "display": "Urea, electrolytes and creatinine measurement"
             },
             {
                 "code": "26958001",
-                "text": "LFT"
+                "text": "LFT",
+                "display": "Liver function test"
             },
             {
                 "code": "252150008",
-                "text": "Fasting Lipids"
+                "text": "Fasting Lipids",
+                "display": "Fasting lipid profile"
             },
             {
                 "code": "313440008",
-                "text": "TSH"
+                "text": "TSH",
+                "display": "Serum TSH measurement"
             }
         ],
         "Male over 50": [
             {
                 "code": "26604007",
-                "text": "FBC"
+                "text": "FBC",
+                "display": "Full blood count"
             },
             {
                 "code": "444164000",
-                "text": "UEC"
+                "text": "UEC",
+                "display": "Urea, electrolytes and creatinine measurement"
             },
             {
                 "code": "26958001",
-                "text": "LFT"
+                "text": "LFT",
+                "display": "Liver function test"
             },
             {
                 "code": "252150008",
-                "text": "Fasting Lipids"
+                "text": "Fasting Lipids",
+                "display": "Fasting lipid profile"
             },
             {
                 "code": "63476009",
-                "text": "PSA"
+                "text": "PSA",
+                "display": "Prostate specific antigen measurement"
             }
         ],
         "Pre-operative": [
             {
                 "code": "26604007",
-                "text": "FBC"
+                "text": "FBC",
+                "display": "Full blood count"
             },
             {
                 "code": "444164000",
-                "text": "UEC"
+                "text": "UEC",
+                "display": "Urea, electrolytes and creatinine measurement"
             },
             {
                 "code": "26958001",
-                "text": "LFT"
+                "text": "LFT",
+                "display": "Liver function test"
             },
             {
-                "code": "441545008",
-                "text": "Coagulation studies"
+                "code": "3116009",
+                "text": "Coagulation studies",
+                "display": "Blood coagulation panel"
             },
             {
                 "code": "252150008",
-                "text": "Fasting Lipids"
+                "text": "Fasting Lipids",
+                "display": "Fasting lipid profile"
             },
             {
                 "code": "252316009",
-                "text": "Group and Hold"
+                "text": "Group and Hold",
+                "display": "Group and save"
             }
         ],
         "Thyroid screen": [
             {
                 "code": "313440008",
-                "text": "TSH"
+                "text": "TSH",
+                "display": "Serum TSH measurement"
             },
             {
                 "code": "26604007",
-                "text": "FBC"
+                "text": "FBC",
+                "display": "Full blood count"
             }
         ],
         "? MI": [
             {
                 "code": "105000003",
-                "text": "Troponin"
+                "text": "Troponin",
+                "display": "Troponin measurement"
             }
         ],
         "Reproductive Hormones": [
             {
                 "code": "270972001",
-                "text": "Serum progesterone"
+                "text": "Serum progesterone",
+                "display": "Serum progesterone measurement"
             },
             {
                 "code": "250660006",
-                "text": "Serum FSH/LH"
+                "text": "Serum FSH/LH",
+                "display": "Luteinising hormone/follicle stimulating hormone measurement"
             },
             {
                 "code": "166448005",
-                "text": "Serum oestradiol"
+                "text": "Serum oestradiol",
+                "display": "Serum oestradiol measurement"
             },
             {
                 "code": "711358004",
-                "text": "AMH"
+                "text": "AMH",
+                "display": "Measurement of anti-Mullerian hormone, quantitative"
             }
         ]
     }

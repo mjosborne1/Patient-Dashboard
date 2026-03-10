@@ -3,31 +3,36 @@
         "Chest X-ray": [
             {
                 "code": "399208008",
-                "text": "Chest X-ray"
+                "text": "Chest X-ray",
+                "display": "Plain X-ray of chest"
             }
         ],
         "MRI Head": [
             {
                 "code": "241601008",
-                "text": "MRI Head"
+                "text": "MRI Head",
+                "display": "MRI of head"
             }
         ],
         "US Liver": [
             {
                 "code": "105377009",
-                "text": "US Liver"
+                "text": "US Liver",
+                "display": "Ultrasound liver"
             }
         ],
         "Left Foot X-ray": [
             {
                 "code": "426908009",
-                "text": "X-ray of left foot"
+                "text": "X-ray of left foot",
+                "display": "Plain X-ray of left foot"
             }
         ],
         "Right Foot X-ray": [
             {
                 "code": "426311001",
-                "text": "Plain X-ray of right foot"
+                "text": "Plain X-ray of right foot",
+                "display": "Plain X-ray of right foot"
             }
         ]
     }

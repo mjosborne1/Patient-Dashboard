@@ -143,6 +143,9 @@
                 <button type="button" id="drawMermaidBtn" class="btn btn-info" onclick="drawMermaidDiagram()" disabled>
                     <i class="fas fa-project-diagram me-1"></i> Draw Mermaid
                 </button>
+                <button type="button" id="sendRequestBtn" class="btn btn-warning" onclick="sendBundleToServer()" disabled>
+                    <i class="fas fa-paper-plane me-1"></i> Send Request
+                </button>
             </div>
             </form>   
         </div>
@@ -315,7 +318,7 @@
         e.preventDefault();
         const jsonDataDiv = document.getElementById('jsonData');
         if (jsonDataDiv) {
-            navigator.clipboard.writeText(jsonDataDiv.textContent);
+            navigator.clipboard.writeText(jsonDataDiv.value);
         }
     });
     
@@ -590,6 +593,20 @@ function updateJsonActionButtons() {
         mermaidBtn.disabled = !hasContent;
         mermaidBtn.style.opacity = hasContent ? '1' : '0.6';
     }
+
+    const sendBtn = document.getElementById('sendRequestBtn');
+    if (sendBtn) {
+        // Only enable if content looks like a Bundle
+        let isBundle = false;
+        if (hasContent) {
+            try {
+                const parsed = JSON.parse(textarea.value);
+                isBundle = parsed.resourceType === 'Bundle';
+            } catch(e) { /* not valid JSON */ }
+        }
+        sendBtn.disabled = !isBundle;
+        sendBtn.style.opacity = isBundle ? '1' : '0.6';
+    }
 }
 
 // Initialize button states on page load
@@ -611,6 +628,83 @@ document.body.addEventListener('htmx:afterSwap', function(event) {
         updateJsonActionButtons();
     }
 });
+
+// Send the FHIR Bundle to the connected server
+function sendBundleToServer() {
+    const textarea = document.getElementById('jsonData');
+    if (!textarea || !textarea.value.trim()) {
+        alert('No bundle data to send. Please create a diagnostic request first.');
+        return;
+    }
+
+    let bundle;
+    try {
+        bundle = JSON.parse(textarea.value);
+    } catch (e) {
+        alert('Invalid JSON: ' + e.message);
+        return;
+    }
+
+    if (bundle.resourceType !== 'Bundle') {
+        alert('The JSON data is not a FHIR Bundle (resourceType: ' + (bundle.resourceType || 'missing') + ')');
+        return;
+    }
+
+    if (!confirm('This will POST the Bundle to the FHIR server. Continue?')) return;
+
+    const sendBtn = document.getElementById('sendRequestBtn');
+    const originalHtml = sendBtn.innerHTML;
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Sending...';
+
+    // Build headers matching the global htmx configRequest pattern
+    const headers = { 'Content-Type': 'application/json' };
+    const fhirServerUrl = localStorage.getItem('fhir_server_url');
+    if (fhirServerUrl) headers['X-FHIR-Server-URL'] = fhirServerUrl;
+
+    const authMode = localStorage.getItem('fhirAuthMode') || 'none';
+    if (authMode === 'basic') {
+        const username = localStorage.getItem('fhirUsername');
+        const password = localStorage.getItem('fhirPassword');
+        if (username && password) {
+            headers['X-FHIR-Username'] = username;
+            headers['X-FHIR-Password'] = password;
+        }
+    } else if (authMode === 'smart') {
+        const token = localStorage.getItem('smart_access_token');
+        if (token) headers['X-FHIR-Bearer-Token'] = token;
+    }
+
+    fetch('/fhir/bundle/submit', {
+        method: 'POST',
+        headers: headers,
+        body: textarea.value
+    })
+    .then(response => response.json())
+    .then(data => {
+        sendBtn.innerHTML = originalHtml;
+        sendBtn.disabled = false;
+
+        // Always show the server response in the textarea
+        if (data.response) {
+            textarea.value = JSON.stringify(data.response, null, 2);
+            textarea.style.minHeight = '200px';
+            updateJsonActionButtons();
+        }
+
+        if (data.success) {
+            alert('Bundle submitted successfully! (HTTP ' + data.http_status + ')');
+        } else {
+            const errorMsg = data.error || ('FHIR server returned HTTP ' + data.http_status);
+            alert('Error: ' + errorMsg + '\n\nCheck the JSON output below for details.');
+        }
+    })
+    .catch(error => {
+        sendBtn.innerHTML = originalHtml;
+        sendBtn.disabled = false;
+        alert('Network error submitting bundle: ' + error.message);
+    });
+}
 </script>
 
 <style>

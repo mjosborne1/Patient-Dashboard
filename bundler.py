@@ -28,32 +28,35 @@ def _build_servicerequest_code(test):
     Build the code element for ServiceRequest based on test data.
     If no code is provided, only include text field (no coding array).
     If code is provided, include both coding and text.
-    The display should already be the official SNOMED display from the client.
+    - 'display' = official SNOMED CT display term (used in coding.display)
+    - 'text' = short/friendly name e.g. "FBC" (used in CodeableConcept.text)
+    If only 'display' is provided, it is used for both.
     """
     import logging
     logging.info(f"_build_servicerequest_code called with test: {test}")
     
     test_code = test.get("code", "").strip() if test.get("code") else ""
     test_display = test.get("display", "")
+    test_text = test.get("text", "") or test_display  # fall back to display if no text
     
-    logging.info(f"Extracted: code='{test_code}', display='{test_display}'")
+    logging.info(f"Extracted: code='{test_code}', display='{test_display}', text='{test_text}'")
     
     if not test_code:
         # No code provided - only use text field (free-text test)
         logging.info("No code provided, returning text-only format")
         return {
-            "text": test_display
+            "text": test_text
         }
     else:
-        # Code provided - use the display as-is (should be official display from client)
-        logging.info(f"Code provided: {test_code}, display: '{test_display}'")
+        # Code provided - use display for coding.display, text for CodeableConcept.text
+        logging.info(f"Code provided: {test_code}, display: '{test_display}', text: '{test_text}'")
         return {
             "coding": [{
                 "system": "http://snomed.info/sct",  
                 "code": test_code,
                 "display": test_display
             }],
-            "text": test_display
+            "text": test_text
         }
 
 import os
@@ -371,13 +374,13 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
     processed_tests = []
     for i, test in enumerate(tests):
         logging.info(f"Processing test #{i}: {test} (type: {type(test)})")
-        if isinstance(test, dict) and "code" in test and "display" in test:
-            logging.info(f"Test #{i} has code='{test.get('code')}' and display='{test.get('display')}'")
+        if isinstance(test, dict) and "code" in test and ("display" in test or "text" in test):
+            logging.info(f"Test #{i} has code='{test.get('code')}', display='{test.get('display','')}', text='{test.get('text','')}' ")
             processed_tests.append(test)
         elif isinstance(test, str):
             # If it's just a string (perhaps just the display name), create a simple dict
             logging.warning(f"Test #{i} is just a string, creating dict with empty code")
-            processed_tests.append({"code": "", "display": test})
+            processed_tests.append({"code": "", "display": test, "text": test})
         else:
             # Log unexpected test format
             logging.warning(f"Skipping invalid test format: {test}")
@@ -517,11 +520,14 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
             })
     
     # Create and add reference to Organization (if provided)
+    organization_name = form_data.get('organisationName', '').strip()
     organization_reference = None
     if organization_id:
         organization_reference = {
             "reference": f"Organization/{organization_id}"
         }
+        if organization_name:
+            organization_reference["display"] = organization_name
         
         # Add Organization as a GET request in the bundle
         transaction_bundle["entry"].append({
@@ -944,7 +950,8 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                     }]
                 },
                 "system": "http://myclinic.example.org.au/identifier",
-                "value": requisition_number
+                "value": requisition_number,
+                "assigner": organization_reference if organization_reference else {"display": "Requesting Organisation"}
             },
             "category": [{
                 "coding": [{
@@ -1078,7 +1085,8 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                     }]
                 },
                 "system": "http://myclinic.example.org.au/identifier",
-                "value": requisition_number
+                "value": requisition_number,
+                "assigner": organization_reference if organization_reference else {"display": "Requesting Organisation"}
             },
             "status": "requested",
             "intent": "order",
@@ -1147,7 +1155,8 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                             }]
                         },
                         "system": "http://myclinic.example.org.au/identifier",
-                        "value": requisition_number
+                        "value": requisition_number,
+                        "assigner": organization_reference if organization_reference else {"display": "Requesting Organisation"}
                     },
                     "status": "active",
                     "category": [{
@@ -1362,7 +1371,8 @@ def create_request_bundle(form_data, fhir_server_url=None, auth_credentials=None
                     }]
                 },
                 "system": "http://myclinic.example.org.au/identifier",
-                "value": requisition_number
+                "value": requisition_number,
+                "assigner": organization_reference if organization_reference else {"display": "Requesting Organisation"}
             },
             "status": "requested",
             "intent": "order",

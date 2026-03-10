@@ -1,11 +1,12 @@
 <div class="mb-3" id="providerDropdownContainer">
   <label for="organisationList" class="form-label">Select Provider Organisation</label>
-  <select class="form-select" id="organisationList" name="organisation">
+  <select class="form-select" id="organisationList" name="organisation" onchange="document.getElementById('organisationName').value = this.selectedOptions[0]?.text?.trim() || ''">
     <option value="">Select a provider...</option>
     {% for org in organisations %}
       <option value="{{ org.id }}">{{ org.name }}</option>
     {% endfor %}
   </select>
+  <input type="hidden" id="organisationName" name="organisationName" value="">
   <!-- Debug info (hidden) -->
   <small class="text-muted d-none" data-org-count="{{ organisations|length }}">
     Loaded {{ organisations|length }} organisations

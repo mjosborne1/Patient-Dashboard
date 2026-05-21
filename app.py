@@ -4,7 +4,8 @@ import json
 import logging
 from flask_login import LoginManager, AnonymousUserMixin, UserMixin, login_user, logout_user, login_required, current_user
 from datetime import datetime
-import os  # Add os module for environment variables
+import os
+import socket
 import hashlib
 import base64
 import secrets
@@ -3422,6 +3423,20 @@ def get_business_statuses_for_status(task_status):
 
 if __name__ == '__main__' and os.environ.get('TESTING') != 'true':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    port = int(os.environ.get('PORT', 5001))
-    # Bind to all interfaces to ensure localhost works on macOS
-    app.run(host='0.0.0.0', port=port, debug=debug_mode)
+    # WERKZEUG_RUN_MAIN=true means this is the reloader child — reuse the port
+    # chosen by the parent so we don't jump to a new port on restart.
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        port = int(os.environ.get("PORT", 5001))
+    else:
+        port = None
+        for candidate in range(5001, 5011):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(("127.0.0.1", candidate)) != 0:
+                    port = candidate
+                    break
+        if port is None:
+            raise RuntimeError("No available port found in range 5001–5010")
+        os.environ["PORT"] = str(port)
+        print(f" * Starting on http://127.0.0.1:{port}")
+    in_docker = os.path.exists("/.dockerenv")
+    app.run(debug=debug_mode, host="0.0.0.0" if in_docker else "127.0.0.1", port=port)

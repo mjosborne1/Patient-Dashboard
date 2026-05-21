@@ -317,8 +317,38 @@
     document.getElementById('jsonDataForm').addEventListener('submit', function(e) {
         e.preventDefault();
         const jsonDataDiv = document.getElementById('jsonData');
-        if (jsonDataDiv) {
-            navigator.clipboard.writeText(jsonDataDiv.value);
+        const btn = document.getElementById('copyToClipboardBtn');
+        if (!jsonDataDiv || !jsonDataDiv.value.trim()) return;
+
+        function onSuccess() {
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check me-1"></i> Copied!';
+            btn.classList.replace('btn-primary', 'btn-success');
+            setTimeout(function() {
+                btn.innerHTML = original;
+                btn.classList.replace('btn-success', 'btn-primary');
+            }, 2000);
+        }
+
+        function onError() {
+            alert('Could not copy to clipboard. Please select the text manually and copy it.');
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(jsonDataDiv.value).then(onSuccess).catch(function() {
+                // Fallback for when clipboard API is denied
+                try {
+                    jsonDataDiv.select();
+                    document.execCommand('copy');
+                    onSuccess();
+                } catch (_) { onError(); }
+            });
+        } else {
+            try {
+                jsonDataDiv.select();
+                document.execCommand('copy');
+                onSuccess();
+            } catch (_) { onError(); }
         }
     });
     
